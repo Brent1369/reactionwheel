@@ -140,30 +140,56 @@ void handleRoot(AsyncWebServerRequest *request) {
 <head>
   <title>ESP32 Reaction Wheel - Interactive Chart</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 20px;
-    }
-    #chartContainer {
-      width: 100%;
-      height: 80vh;
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    #chartContainer { 
+      width: 100%; 
+      height: 80vh; 
       margin-bottom: 20px;
+      position: relative;
     }
-    #status {
-      margin-top: 10px;
-      font-size: 14px;
-      color: #666;
+    #controls { margin: 10px 0; }
+    #status { font-size: 14px; color: #666; }
+    button {
+      padding: 5px 10px;
+      margin-right: 5px;
+      background: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    button:hover { background: #45a049; }
+    button:disabled { background: #cccccc; cursor: not-allowed; }
+    .zoom-instructions {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(255,255,255,0.8);
+      padding: 5px 10px;
+      border-radius: 3px;
+      font-size: 12px;
     }
   </style>
 </head>
 <body>
   <h1>Reaction Wheel Telemetry</h1>
+  <div id="controls">
+    <button id="pauseBtn">Pause</button>
+    <button id="resumeBtn" disabled>Resume Live</button>
+    <button id="resetZoomBtn">Reset View</button>
+  </div>
   <div id="chartContainer">
+    <div class="zoom-instructions">
+      <b>Zoom/Pan Controls:</b><br>
+      • Drag to pan<br>
+      • Scroll to zoom<br>
+      • Shift+Drag to zoom area<br>
+      • Double-click to reset
+    </div>
     <canvas id="chart"></canvas>
   </div>
-  <div id="status">Live streaming - Drag to pan, Scroll to zoom</div>
+  <div id="status">Live streaming - Interact with chart</div>
 
-  <!-- Chart.js v3.x with compatible plugins -->
   <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.3/build/global/luxon.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.2.0/dist/chartjs-adapter-luxon.min.js"></script>
@@ -171,18 +197,16 @@ void handleRoot(AsyncWebServerRequest *request) {
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@1.2.1/dist/chartjs-plugin-zoom.min.js"></script>
 
   <script>
-    // Initialize WebSocket connection
     let ws;
     let chart;
-    let isLive = true;
-    let lastUpdate = Date.now();
+    let isPaused = false;
     
     function connectWebSocket() {
       ws = new WebSocket('ws://' + window.location.hostname + '/ws');
       
       ws.onopen = function() {
         console.log("WebSocket connected");
-        updateStatus("Live streaming - Drag to pan, Scroll to zoom");
+        updateStatus("Live streaming - Interact with chart");
       };
       
       ws.onclose = function() {
@@ -203,21 +227,13 @@ void handleRoot(AsyncWebServerRequest *request) {
         points.forEach(entry => {
           const [pitch, speed] = entry.split(',').map(Number);
           if (!isNaN(pitch) && !isNaN(speed)) {
-            chart.data.datasets[0].data.push({
-              x: now,
-              y: pitch
-            });
-            chart.data.datasets[1].data.push({
-              x: now,
-              y: speed
-            });
+            chart.data.datasets[0].data.push({ x: now, y: pitch });
+            chart.data.datasets[1].data.push({ x: now, y: speed });
           }
         });
         
-        // Only update if we're in live mode or it's been >1s since last update
-        if (isLive || (now - lastUpdate > 1000)) {
+        if (!isPaused && !chart.zoom._isPanning && !chart.zoom._isZooming) {
           chart.update('quiet');
-          lastUpdate = now;
         }
       };
     }
@@ -226,7 +242,6 @@ void handleRoot(AsyncWebServerRequest *request) {
       document.getElementById('status').textContent = message;
     }
     
-    // Initialize chart with full interactivity
     function initChart() {
       const ctx = document.getElementById('chart').getContext('2d');
       chart = new Chart(ctx, {
@@ -254,6 +269,7 @@ void handleRoot(AsyncWebServerRequest *request) {
         },
         options: {
           responsive: true,
+          maintainAspectRatio: false,
           animation: false,
           interaction: {
             intersect: false,
@@ -270,56 +286,56 @@ void handleRoot(AsyncWebServerRequest *request) {
                 pause: false,
                 ttl: 20000,
                 onRefresh: chart => {
-                  if (isLive) {
+                  if (!isPaused && !chart.zoom._isPanning && !chart.zoom._isZooming) {
                     chart.options.scales.x.realtime.pause = false;
                   }
                 }
-              },
-              bounds: 'ticks'
+              }
             },
             y: {
-              title: {
-                display: true,
-                text: 'Pitch Angle (°)'
-              },
+              title: { display: true, text: 'Pitch Angle (°)' },
               suggestedMin: -10,
               suggestedMax: 10
             },
             y1: {
               position: 'right',
-              title: {
-                display: true,
-                text: 'Motor Speed (RPM)'
-              },
-              grid: {
-                drawOnChartArea: false
-              }
+              title: { display: true, text: 'Motor Speed (RPM)' },
+              grid: { drawOnChartArea: false }
             }
           },
           plugins: {
             zoom: {
               pan: {
                 enabled: true,
-                mode: 'xy',
-                speed: 20,
+                mode: 'x',
                 threshold: 10,
-                onPan: ({chart}) => {
-                  isLive = false;
-                  updateStatus("Paused - Drag to pan, Scroll to zoom, Double-click to resume live");
-                }
+                modifierKey: null
               },
               zoom: {
                 wheel: {
                   enabled: true,
                   speed: 0.1
                 },
+                drag: {
+                  enabled: true,
+                  modifierKey: 'shift',
+                  backgroundColor: 'rgba(225,225,225,0.3)',
+                  borderColor: 'rgba(225,225,225)',
+                  borderWidth: 1,
+                  threshold: 0
+                },
                 pinch: {
                   enabled: true
                 },
-                mode: 'xy',
-                onZoom: ({chart}) => {
-                  isLive = false;
-                  updateStatus("Paused - Drag to pan, Scroll to zoom, Double-click to resume live");
+                mode: 'x',
+                onZoomStart: () => {
+                  chart.options.scales.x.realtime.pause = true;
+                  updateStatus("Zooming - Select area with Shift+Drag");
+                },
+                onZoomComplete: () => {
+                  if (!isPaused) {
+                    updateStatus("Paused - Click 'Resume' to return to live view");
+                  }
                 }
               }
             }
@@ -327,20 +343,46 @@ void handleRoot(AsyncWebServerRequest *request) {
         },
         plugins: [ChartStreaming]
       });
-      
-      // Double-click to return to live mode
-      ctx.canvas.ondblclick = function() {
-        isLive = true;
-        chart.options.scales.x.realtime.pause = false;
-        chart.update();
-        updateStatus("Live streaming - Drag to pan, Scroll to zoom");
-      };
     }
     
-    // Initialize everything when page loads
+    function setupControls() {
+      document.getElementById('pauseBtn').addEventListener('click', function() {
+        isPaused = true;
+        chart.options.scales.x.realtime.pause = true;
+        this.disabled = true;
+        document.getElementById('resumeBtn').disabled = false;
+        updateStatus("Paused - Interact with chart");
+      });
+      
+      document.getElementById('resumeBtn').addEventListener('click', function() {
+        isPaused = false;
+        chart.options.scales.x.realtime.pause = false;
+        this.disabled = true;
+        document.getElementById('pauseBtn').disabled = false;
+        chart.update();
+        updateStatus("Live streaming - Interact with chart");
+      });
+      
+      document.getElementById('resetZoomBtn').addEventListener('click', function() {
+        if (chart.resetZoom) {
+          chart.resetZoom();
+        }
+        if (!isPaused) {
+          chart.options.scales.x.realtime.pause = false;
+          chart.update();
+          updateStatus("Live streaming - Interact with chart");
+        }
+      });
+    }
+    
     window.addEventListener('load', function() {
       initChart();
+      setupControls();
       connectWebSocket();
+      
+      // Debugging
+      console.log('Chart.js version:', Chart.version);
+      console.log('Zoom plugin available:', Chart.Zoom !== undefined);
     });
   </script>
 </body>
@@ -348,8 +390,6 @@ void handleRoot(AsyncWebServerRequest *request) {
 )=====";
   request->send(200, "text/html", html);
 }
-
-
 
 /*
 // Handle PID value submission

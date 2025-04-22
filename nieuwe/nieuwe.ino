@@ -82,8 +82,12 @@ void setupPcnt2();
 //#include "PID_AutoTune_v0.h"
 
 
-float global_pitch;
-float global_roll;
+float global_pitch =0;
+float global_pitch_accel =0;
+float global_pitch_gyro = 0;
+float global_roll =0;
+float global_roll_accel =0;
+float global_roll_gyro = 0;
 
 //#include <WebServer.h>
 //WebServer server(80);  // HTTP server on port 80
@@ -91,6 +95,8 @@ float global_roll;
 float Kp1 = 80.0;  // Proportional Gain (Increase for faster response)
 float Ki1 = 0.0;   // Derivative Gain (Increase to reduce overshoot)
 float Kd1 = 10.0;
+float motorMultiplier1 = -200;
+float motorMultiplier2 = -200;
 
 float Kp2 = 80.0;  // Proportional Gain (Increase for faster response)
 float Ki2 = 0.0;   // Derivative Gain (Increase to reduce overshoot)
@@ -107,6 +113,8 @@ float tachSpeed1RA = 0;
 float tachSpeed2RA = 0;
 float tachSpeed2 = 0;
 float maxspeed = 3300;
+float pid_output1 = 0;
+float pid_output2 =0;
 
 float target_pitch = 1;  //1;
 float target_roll = 0;
@@ -129,11 +137,10 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
       Serial.printf("Client %u disconnected\n", client->id());
       break;
     case WS_EVT_DATA:
-      // Handle PID updates
       if (len > 0) {
         String message = String((char *)data, len);
         if (message.indexOf('/') != -1) {
-          // Format: "motorNum/P/I/D/target"
+          // Format: "motorNum/P/I/D/target/multiplier"
           int motorNum = message.substring(0, message.indexOf('/')).toInt();
           message = message.substring(message.indexOf('/') + 1);
 
@@ -144,22 +151,20 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
           message = message.substring(message.indexOf('/') + 1);
 
           float d = message.substring(0, message.indexOf('/')).toFloat();
-          float target = message.substring(message.indexOf('/') + 1).toFloat();
+          message = message.substring(message.indexOf('/') + 1);
+
+          float target = message.substring(0, message.indexOf('/')).toFloat();
+          float multiplier = message.substring(message.indexOf('/') + 1).toFloat();
 
           if (motorNum == 1) {
-            Kp1 = p;
-            Ki1 = i;
-            Kd1 = d;
+            Kp1 = p; Ki1 = i; Kd1 = d;
             target_pitch = target;
+            motorMultiplier1 = multiplier;
           } else if (motorNum == 2) {
-            Kp2 = p;
-            Ki2 = i;
-            Kd2 = d;
+            Kp2 = p; Ki2 = i; Kd2 = d;
             target_roll = target;
+            motorMultiplier2 = multiplier;
           }
-
-          Serial.printf("Updated PID for motor %d: P=%.2f I=%.2f D=%.2f Target=%.2f\n",
-                        motorNum, p, i, d, target);
         }
       }
       break;
@@ -181,22 +186,33 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
     const char *axis;
   };
 
+  
+
   // Define all graph variables in ONE PLACE
   const GraphConfig variables[] = {
     { "pitch", "Pitch Angle (°)", "rgb(255, 99, 132)", &global_pitch, -15, 15, "y" },
     { "roll", "Roll Angle (°)", "rgb(255, 159, 64)", &global_roll, -15, 15, "y" },
-    { "speed1", "Motor 1 (RPM)", "rgb(54, 162, 235)", &tachSpeed1, -1000, 1000, "y1" },
-    { "speed2", "Motor 2 (RPM)", "rgb(75, 192, 192)", &tachSpeed2, -1000, 1000, "y1" },
-    { "pid1", "PID Output 1", "rgb(153, 102, 255)", &Output1, -100, 100, "y2" },
-    { "pid2", "PID Output 2", "rgb(201, 203, 207)", &Output2, -100, 100, "y2" }
+
+    { "pitch_accel", "Pitch Angle accel (°)", "rgb(255, 99, 132)", &global_pitch_accel, -15, 15, "y" },
+    { "roll_accel", "Roll Angle accel (°)", "rgb(255, 159, 64)", &global_roll_accel, -15, 15, "y" },
+
+    { "pitch_gyro", "Pitch gyro dps", "rgb(255, 99, 132)", &global_pitch_gyro, -15, 15, "y" },
+    { "roll_gyro", "Roll gyro dps", "rgb(255, 159, 64)", &global_roll_gyro, -15, 15, "y" },
+
+
+
+    { "speed1", "Motor 1 (RPM)", "rgb(54, 162, 235)", &tachSpeed1, -50, 50, "y1" },
+    { "speed2", "Motor 2 (RPM)", "rgb(75, 192, 192)", &tachSpeed2, -50, 50, "y1" },
+    { "pid1", "PID Output 1", "rgb(153, 102, 255)", &pid_output1, -100, 100, "y2" },
+    { "pid2", "PID Output 2", "rgb(201, 203, 207)", &pid_output2, -100, 100, "y2" }
   };
 
 
   void sendGraphData() {
   static unsigned long lastSend = 0;
-  if (millis() - lastSend >= 100 && ws.count() > 0) {
+  if (millis() - lastSend >= 50 && ws.count() > 0) {
     String result = "";
-    for (size_t i = 0; i < 6; i++) {
+    for (size_t i = 0; i < 10; i++) {
       result += String(*variables[i].valuePtr, 2);  // Two decimal places
       if (i < sizeof(variables) / sizeof(variables[0]) - 1) {
         result += ",";
@@ -239,22 +255,23 @@ void handleRoot(AsyncWebServerRequest *request) {
       realtime: {
         duration: 10000,
         refresh: 100,
-        delay: 100,
+        delay: 50,
         pause: false,
-        ttl: 20000
+        ttl: 100000
+
       }
     },
     y: {
       title: { display: true, text: 'Angle (°)' },
-      suggestedMin: -15,
-      suggestedMax: 15
+      suggestedMin: -5,
+      suggestedMax: 5
     },
     y1: {
       position: 'right',
       title: { display: true, text: 'Speed (RPM)' },
       grid: { drawOnChartArea: false },
-      suggestedMin: -1000,
-      suggestedMax: 1000
+      suggestedMin: -50,
+      suggestedMax: 50
     },
     y2: {
       position: 'right',
@@ -361,6 +378,11 @@ void handleRoot(AsyncWebServerRequest *request) {
         <input type="number" id="d1" value="10.0" step="0.1">
       </div>
       <div>
+        <label for="multiplier1">Multiplier:</label>
+        <input type="number" id="multiplier1" value="-200.0" step="0.1" min="0.1" max="5.0">
+      </div>
+
+      <div>
         <label for="target1">Target:</label>
         <input type="number" id="target1" value="0.0" step="0.1">
       </div>
@@ -380,6 +402,10 @@ void handleRoot(AsyncWebServerRequest *request) {
       <div>
         <label for="d2">D:</label>
         <input type="number" id="d2" value="10.0" step="0.1">
+      </div>
+      <div>
+        <label for="multiplier2">Multiplier:</label>
+        <input type="number" id="multiplier2" value="-200.0" step="0.1" min="0.1" max="5.0">
       </div>
       <div>
         <label for="target2">Target:</label>
@@ -470,8 +496,9 @@ void handleRoot(AsyncWebServerRequest *request) {
       const i = document.getElementById('i' + prefix).value;
       const d = document.getElementById('d' + prefix).value;
       const target = document.getElementById('target' + prefix).value;
-      
-      const command = `${motorNum}/${p}/${i}/${d}/${target}`;
+      const multiplier = document.getElementById('multiplier' + prefix).value;
+
+      const command = `${motorNum}/${p}/${i}/${d}/${target}/${multiplier}`;
       ws.send(command);
       console.log("Sent PID update:", command);
       updateStatus(`Updated Motor ${motorNum} PID: P=${p} I=${i} D=${d} Target=${target}`);
@@ -540,12 +567,16 @@ void handleRoot(AsyncWebServerRequest *request) {
                 delay: 100,
                 pause: false,
                 ttl: 20000,
+
+
                 onRefresh: chart => {
                   if (!isPaused && !chart.zoom._isPanning && !chart.zoom._isZooming) {
                     chart.options.scales.x.realtime.pause = false;
                   }
                 }
+                
               }
+              
             },
             ...graphConfig.axes
           },
@@ -877,8 +908,8 @@ int setMotorAcceleration2(int PID_OUT) {
 
   PID_OUT = constrain(PID_OUT, -100, 100);
 
-  previousDutyCycle2 = previousDutyCycle2 * 0.9 + PID_OUT;
-  //previousDutyCycle =   PID_OUT;
+  //previousDutyCycle2 = previousDutyCycle2 * 0.9 + PID_OUT;
+  previousDutyCycle2 =   PID_OUT;
 
   //previousDutyCycle =  constrain(PID_OUT + 0.0137 * motor_speed_pwmX, -100, 100);
   //motor_speed_pwmX += previousDutyCycle;
@@ -923,7 +954,7 @@ void driveMotor2(double dutyCycle) {
 
   dutyCycle = 100 - abs(int(dutyCycle));
   // Convert to absolute PWM value (0-255)
-  mcpwm_set_duty(MCPWM_UNIT_1, MCPWM_TIMER_1, MCPWM_OPR_A, dutyCycle);
+  mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM_OPR_A, dutyCycle);
 }
 
 float weighted_speed(float speed) {
@@ -1110,7 +1141,7 @@ void loop1(void *pvParameter) {
 
     float currenttach = tachSpeed1;
     // NEW: PID output instead of PD
-    float pid_output1 = Kp1 * error1 + Ki1 * integral_error1 + Kd1 * derivative1 - 200.0 * (tachSpeed1RA / 50.0);
+    pid_output1 = Kp1 * error1 + Ki1 * integral_error1 + Kd1 * derivative1  +  motorMultiplier1 * (tachSpeed1RA / 50.0);
     pid_output1 = constrain(pid_output1, -100, 100);
 
     //motorspeedtotaltest +=pid_output1;
@@ -1118,7 +1149,7 @@ void loop1(void *pvParameter) {
     pid_output1 = setMotorAcceleration1(pid_output1);
     //pid_output1 = constrain(pid_output1, -100, 100);
 
-    float pid_output2 = Kp2 * error2 + Ki2 * integral_error2 + Kd2 * derivative2 - 200.0 * (tachSpeed2RA / 50.0);
+    pid_output2 = Kp2 * error2 + Ki2 * integral_error2 + Kd2 * derivative2 +  motorMultiplier2  * (tachSpeed2RA / 50.0);
     pid_output2 = constrain(pid_output2, -100, 100);
     pid_output2 = setMotorAcceleration2(pid_output2);
     //pid_output2 = constrain(pid_output2, -100, 100);
@@ -1361,9 +1392,12 @@ void printAttitude(float ax, float ay, float az, float gx, float gy, float gz) {
 
   float sensitivityFactor = 2000.0 / 32768.0;  // This is the scaling factor
 
-  gx = imu.calcGyro(imu.gx) - 2.5;
-  gy = imu.calcGyro(imu.gy) + 0;  //+ 0.5;  // Set gy to calculated DPS
+  gx = imu.calcGyro(imu.gx) -1.5;//- 2.5;
+  gy = imu.calcGyro(imu.gy) + 3.2;  //+ 0.5;  // Set gy to calculated DPS
 
+
+global_pitch_gyro = gy;
+global_roll_gyro = gx;
   // Update last update time
   lastUpdate = now;
 
@@ -1371,6 +1405,8 @@ void printAttitude(float ax, float ay, float az, float gx, float gy, float gz) {
   float accel_roll = atan2(ay, sqrt(ax * ax + az * az)) * 180.0 / PI;
   float accel_pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180.0 / PI;
 
+global_pitch_accel = accel_pitch;
+global_roll_accel = accel_roll;
 
   Kalman_Filter(angle_pitch, bias_pitch, P_pitch, accel_pitch, gy, false);
   Kalman_Filter(angle_roll, bias_roll, P_roll, accel_roll, gx, false);

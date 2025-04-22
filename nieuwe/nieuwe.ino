@@ -451,7 +451,7 @@ void handleRoot(AsyncWebServerRequest *request) {
         
         points.forEach(entry => {
           const values = entry.split(',').map(Number);
-          if (values.length === graphConfig.variables.length) {
+          if (values.length === graphConfig.datasets.length) {
             values.forEach((val, i) => {
               chart.data.datasets[i].data.push({ x: now, y: val });
             });
@@ -519,15 +519,8 @@ void handleRoot(AsyncWebServerRequest *request) {
       chart = new Chart(ctx, {
         type: 'line',
         data: {
-          datasets: graphConfig.variables.map(varConfig => ({
-            label: varConfig.label,
-            borderColor: varConfig.color,
-            backgroundColor: varConfig.color.replace(')', ', 0.1)'),
-            borderWidth: 1,
-            pointRadius: 0,
-            data: [],
-            yAxisID: varConfig.axis
-          }))
+          datasets: graphConfig.datasets
+    
         },
         options: {
           responsive: true,

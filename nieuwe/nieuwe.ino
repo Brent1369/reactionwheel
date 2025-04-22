@@ -1049,9 +1049,9 @@ float changederivative = 0;
     pid_output1 = setMotorAcceleration1(pid_output1);
     //pid_output1 = constrain(pid_output1, -100, 100);  
 
-    float pid_output2 = Kp2 * error2 + Ki2 * integral_error2 + Kd2 * derivative2; 
-    //pid_output2 = constrain(pid_output2, -100, 100);  
-    pid_output2 = setMotorAcceleration2(0);
+    float pid_output2 = Kp2 * error2 + Ki2 * integral_error2 + Kd2 * derivative2 - 200.0 * (tachSpeed2RA/50.0); 
+    pid_output2 = constrain(pid_output2, -100, 100);  
+    pid_output2 = setMotorAcceleration2(pid_output2);
     //pid_output2 = constrain(pid_output2, -100, 100);  
 
 

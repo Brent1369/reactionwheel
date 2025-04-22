@@ -1285,7 +1285,7 @@ void printAttitude(float ax, float ay, float az, float gx, float gy, float gz) {
 
     float sensitivityFactor = 2000.0 / 32768.0;  // This is the scaling factor
 
-    gx = imu.calcGyro(imu.gx) - 2.5;
+    gx = imu.calcGyro(imu.gx);// - 2.5;
     gy = imu.calcGyro(imu.gy) + 0;//+ 0.5;  // Set gy to calculated DPS
 
     // Update last update time

@@ -263,23 +263,23 @@ void handleRoot(AsyncWebServerRequest *request) {
     },
     y: {
       title: { display: true, text: 'Angle (°)' },
-      suggestedMin: -5,
-      suggestedMax: 5
+      beginAtZero: false,  // Let the scale adapt to data
+        grace: '5%'  // Add 5% padding above/below data
     },
     y1: {
       position: 'right',
       title: { display: true, text: 'Speed (RPM)' },
       grid: { drawOnChartArea: false },
-      suggestedMin: -50,
-      suggestedMax: 50
+      beginAtZero: false,  // Let the scale adapt to data
+      grace: '5%'  // Add 5% padding above/below data
     },
     y2: {
       position: 'right',
       title: { display: true, text: 'PID Output' },
       grid: { drawOnChartArea: false },
-      suggestedMin: -100,
-      suggestedMax: 100,
-      display: false
+      display: false,
+      beginAtZero: false,  // Let the scale adapt to data
+      grace: '5%'  // Add 5% padding above/below data
     }
   )=====";
 

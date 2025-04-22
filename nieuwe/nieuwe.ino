@@ -704,7 +704,7 @@ void setup() {
   // Configure MCPWM parameters for the second PWM output (PWM_GPIO2)
   mcpwm_config_t pwm_config2;
   pwm_config2.frequency = 20000;                // 20 kHz frequency
-  pwm_config2.cmpr_a = 25.0;                    // Duty cycle for MCPWM1A (25%)
+  pwm_config2.cmpr_a = 50.0;                    // Duty cycle for MCPWM1A (25%)
   pwm_config2.cmpr_b = 0.0;                     // Not used
   pwm_config2.counter_mode = MCPWM_UP_COUNTER;  // Count-up mode
   pwm_config2.duty_mode = MCPWM_DUTY_MODE_0;    // Active high duty cycle
@@ -1118,9 +1118,9 @@ void loop1(void *pvParameter) {
     pid_output1 = setMotorAcceleration1(pid_output1);
     //pid_output1 = constrain(pid_output1, -100, 100);
 
-    float pid_output2 = Kp2 * error2 + Ki2 * integral_error2 + Kd2 * derivative2;
-    //pid_output2 = constrain(pid_output2, -100, 100);
-    //pid_output2 = setMotorAcceleration2(pid_output2);
+    float pid_output2 = Kp2 * error2 + Ki2 * integral_error2 + Kd2 * derivative2 - 200.0 * (tachSpeed2RA / 50.0);
+    pid_output2 = constrain(pid_output2, -100, 100);
+    pid_output2 = setMotorAcceleration2(pid_output2);
     //pid_output2 = constrain(pid_output2, -100, 100);
 
 

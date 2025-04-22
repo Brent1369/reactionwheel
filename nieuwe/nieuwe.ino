@@ -20,8 +20,11 @@
 #include "freertos/queue.h"
 
 
-const char* ssid = "Xperia XA2_e9a9";
-const char* password = "brent123";
+//const char* ssid = "Xperia XA2_e9a9";
+//const char* password = "brent123";
+
+const char* ssid = "telenet-A6AD7E7";
+const char* password = "vzemhjvX4arp";
 
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
@@ -100,7 +103,8 @@ double Setpoint2 = 0;
 double Output2 = 0;
 
 
-
+  float target_pitch = 1;//1; 
+  float target_roll = 0; 
 
 QueueHandle_t pcntQueue;  // FreeRTOS queue for ISR → Task communication
 
@@ -110,7 +114,7 @@ QueueHandle_t pcntQueue;  // FreeRTOS queue for ISR → Task communication
 
 
 
-  void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, 
+void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, 
               AwsEventType type, void *arg, uint8_t *data, size_t len) {
   switch(type) {
     case WS_EVT_CONNECT:
@@ -120,7 +124,39 @@ QueueHandle_t pcntQueue;  // FreeRTOS queue for ISR → Task communication
       Serial.printf("Client %u disconnected\n", client->id());
       break;
     case WS_EVT_DATA:
-      // Handle incoming data if needed
+      // Handle PID updates
+      if(len > 0) {
+        String message = String((char*)data, len);
+        if(message.indexOf('/') != -1) {
+          // Format: "motorNum/P/I/D/target"
+          int motorNum = message.substring(0, message.indexOf('/')).toInt();
+          message = message.substring(message.indexOf('/') + 1);
+          
+          float p = message.substring(0, message.indexOf('/')).toFloat();
+          message = message.substring(message.indexOf('/') + 1);
+          
+          float i = message.substring(0, message.indexOf('/')).toFloat();
+          message = message.substring(message.indexOf('/') + 1);
+          
+          float d = message.substring(0, message.indexOf('/')).toFloat();
+          float target = message.substring(message.indexOf('/') + 1).toFloat();
+          
+          if(motorNum == 1) {
+            Kp1 = p;
+            Ki1 = i;
+            Kd1 = d;
+            target_pitch = target;
+          } else if(motorNum == 2) {
+            Kp2 = p;
+            Ki2 = i;
+            Kd2 = d;
+            target_roll = target;
+          }
+          
+          Serial.printf("Updated PID for motor %d: P=%.2f I=%.2f D=%.2f Target=%.2f\n",
+                       motorNum, p, i, d, target);
+        }
+      }
       break;
     case WS_EVT_PONG:
     case WS_EVT_ERROR:
@@ -138,20 +174,42 @@ void handleRoot(AsyncWebServerRequest *request) {
 <!DOCTYPE html>
 <html>
 <head>
-  <title>ESP32 Reaction Wheel - Interactive Chart</title>
+  <title>ESP32 Reaction Wheel - PID Control</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; }
-    #chartContainer { 
-      width: 100%; 
-      height: 80vh; 
+    .pid-controls { 
+      background: #f5f5f5; 
+      padding: 15px; 
+      border-radius: 5px; 
       margin-bottom: 20px;
-      position: relative;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
     }
-    #controls { margin: 10px 0; }
-    #status { font-size: 14px; color: #666; }
+    .pid-group {
+      background: white;
+      padding: 10px;
+      border-radius: 3px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    .pid-group h3 {
+      margin-top: 0;
+      color: #333;
+    }
+    label {
+      display: inline-block;
+      width: 80px;
+      font-weight: bold;
+    }
+    input {
+      width: 80px;
+      padding: 5px;
+      margin-bottom: 8px;
+      border: 1px solid #ddd;
+      border-radius: 3px;
+    }
     button {
       padding: 5px 10px;
-      margin-right: 5px;
       background: #4CAF50;
       color: white;
       border: none;
@@ -159,7 +217,19 @@ void handleRoot(AsyncWebServerRequest *request) {
       cursor: pointer;
     }
     button:hover { background: #45a049; }
-    button:disabled { background: #cccccc; cursor: not-allowed; }
+    button:disabled { 
+      background: #cccccc; 
+      cursor: not-allowed; 
+    }
+    #chartControls {
+      margin: 10px 0;
+    }
+    #chartContainer { 
+      width: 100%; 
+      height: 70vh; 
+      margin-bottom: 20px;
+      position: relative;
+    }
     .zoom-instructions {
       position: absolute;
       top: 10px;
@@ -169,15 +239,66 @@ void handleRoot(AsyncWebServerRequest *request) {
       border-radius: 3px;
       font-size: 12px;
     }
+    #status {
+      font-size: 14px; 
+      color: #666;
+      margin-top: 10px;
+    }
   </style>
 </head>
 <body>
-  <h1>Reaction Wheel Telemetry</h1>
-  <div id="controls">
+  <h1>Reaction Wheel PID Control</h1>
+  
+  <div class="pid-controls">
+    <div class="pid-group">
+      <h3>Motor 1 (Pitch)</h3>
+      <div>
+        <label for="p1">P:</label>
+        <input type="number" id="p1" value="80.0" step="0.1">
+      </div>
+      <div>
+        <label for="i1">I:</label>
+        <input type="number" id="i1" value="0.0" step="0.01">
+      </div>
+      <div>
+        <label for="d1">D:</label>
+        <input type="number" id="d1" value="10.0" step="0.1">
+      </div>
+      <div>
+        <label for="target1">Target:</label>
+        <input type="number" id="target1" value="0.0" step="0.1">
+      </div>
+      <button onclick="updatePID(1)">Update</button>
+    </div>
+    
+    <div class="pid-group">
+      <h3>Motor 2 (Roll)</h3>
+      <div>
+        <label for="p2">P:</label>
+        <input type="number" id="p2" value="80.0" step="0.1">
+      </div>
+      <div>
+        <label for="i2">I:</label>
+        <input type="number" id="i2" value="0.0" step="0.01">
+      </div>
+      <div>
+        <label for="d2">D:</label>
+        <input type="number" id="d2" value="10.0" step="0.1">
+      </div>
+      <div>
+        <label for="target2">Target:</label>
+        <input type="number" id="target2" value="0.0" step="0.1">
+      </div>
+      <button onclick="updatePID(2)">Update</button>
+    </div>
+  </div>
+
+  <div id="chartControls">
     <button id="pauseBtn">Pause</button>
     <button id="resumeBtn" disabled>Resume Live</button>
     <button id="resetZoomBtn">Reset View</button>
   </div>
+
   <div id="chartContainer">
     <div class="zoom-instructions">
       <b>Zoom/Pan Controls:</b><br>
@@ -188,13 +309,16 @@ void handleRoot(AsyncWebServerRequest *request) {
     </div>
     <canvas id="chart"></canvas>
   </div>
+  
   <div id="status">Live streaming - Interact with chart</div>
 
+  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.3/build/global/luxon.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.2.0/dist/chartjs-adapter-luxon.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-streaming@2.0.0/dist/chartjs-plugin-streaming.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@1.2.1/dist/chartjs-plugin-zoom.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-streaming@2.0.0/dist/chartjs-plugin-streaming.min.js"></script>
+
 
   <script>
     let ws;
@@ -238,8 +362,50 @@ void handleRoot(AsyncWebServerRequest *request) {
       };
     }
     
+    function updatePID(motorNum) {
+      const prefix = motorNum === 1 ? '1' : '2';
+      const p = document.getElementById('p' + prefix).value;
+      const i = document.getElementById('i' + prefix).value;
+      const d = document.getElementById('d' + prefix).value;
+      const target = document.getElementById('target' + prefix).value;
+      
+      const command = `${motorNum}/${p}/${i}/${d}/${target}`;
+      ws.send(command);
+      console.log("Sent PID update:", command);
+    }
+    
     function updateStatus(message) {
       document.getElementById('status').textContent = message;
+    }
+    
+    function setupControls() {
+      document.getElementById('pauseBtn').addEventListener('click', function() {
+        isPaused = true;
+        chart.options.scales.x.realtime.pause = true;
+        this.disabled = true;
+        document.getElementById('resumeBtn').disabled = false;
+        updateStatus("Paused - Interact with chart");
+      });
+      
+      document.getElementById('resumeBtn').addEventListener('click', function() {
+        isPaused = false;
+        chart.options.scales.x.realtime.pause = false;
+        this.disabled = true;
+        document.getElementById('pauseBtn').disabled = false;
+        chart.update();
+        updateStatus("Live streaming - Interact with chart");
+      });
+      
+      document.getElementById('resetZoomBtn').addEventListener('click', function() {
+        if (chart.resetZoom) {
+          chart.resetZoom();
+        }
+        if (!isPaused) {
+          chart.options.scales.x.realtime.pause = false;
+          chart.update();
+          updateStatus("Live streaming - Interact with chart");
+        }
+      });
     }
     
     function initChart() {
@@ -309,7 +475,17 @@ void handleRoot(AsyncWebServerRequest *request) {
                 enabled: true,
                 mode: 'x',
                 threshold: 10,
-                modifierKey: null
+                modifierKey: null,
+                onPanStart: () => {
+                  chart.options.scales.x.realtime.pause = true;
+                  updateStatus("Panning - Drag to navigate");
+                },
+                onPanComplete: () => {
+                  if (!isPaused) {
+                    chart.options.scales.x.realtime.pause = false;
+                    updateStatus("Live streaming");
+                  }
+                }
               },
               zoom: {
                 wheel: {
@@ -324,10 +500,9 @@ void handleRoot(AsyncWebServerRequest *request) {
                   borderWidth: 1,
                   threshold: 0
                 },
-                pinch: {
-                  enabled: true
-                },
+
                 mode: 'x',
+
                 onZoomStart: () => {
                   chart.options.scales.x.realtime.pause = true;
                   updateStatus("Zooming - Select area with Shift+Drag");
@@ -340,37 +515,6 @@ void handleRoot(AsyncWebServerRequest *request) {
               }
             }
           }
-        },
-        plugins: [ChartStreaming]
-      });
-    }
-    
-    function setupControls() {
-      document.getElementById('pauseBtn').addEventListener('click', function() {
-        isPaused = true;
-        chart.options.scales.x.realtime.pause = true;
-        this.disabled = true;
-        document.getElementById('resumeBtn').disabled = false;
-        updateStatus("Paused - Interact with chart");
-      });
-      
-      document.getElementById('resumeBtn').addEventListener('click', function() {
-        isPaused = false;
-        chart.options.scales.x.realtime.pause = false;
-        this.disabled = true;
-        document.getElementById('pauseBtn').disabled = false;
-        chart.update();
-        updateStatus("Live streaming - Interact with chart");
-      });
-      
-      document.getElementById('resetZoomBtn').addEventListener('click', function() {
-        if (chart.resetZoom) {
-          chart.resetZoom();
-        }
-        if (!isPaused) {
-          chart.options.scales.x.realtime.pause = false;
-          chart.update();
-          updateStatus("Live streaming - Interact with chart");
         }
       });
     }
@@ -569,7 +713,7 @@ void setup() {
     WiFi.setSleep(false);
 
 
-    vTaskDelay(10000);
+    vTaskDelay(20000);
 
 
     pcntQueue = xQueueCreate(10, sizeof(int)); // Queue for PCNT data
@@ -784,6 +928,8 @@ void sendData() {
 
 String dataBuffer = "";
 
+
+
 void loop1(void *pvParameter) {
 
 
@@ -791,8 +937,7 @@ void loop1(void *pvParameter) {
   float angleincrement = 0.01;
   float incrementmax = 1;
 
-  float target_pitch = 1;//1; 
-  float target_roll = 0; 
+
   
   float integral_error1 = 0;       // NEW: Integral error accumulator
   float integral_error2 = 0;       // NEW: Integral error accumulator
@@ -859,7 +1004,7 @@ float changederivative = 0;
 
 
 
-    target_pitch = constrain(target_pitch, -1.5, 1.5);  
+    target_pitch = constrain(target_pitch, -15, 15);  
 
     float error1 = target_pitch - global_pitch;
 

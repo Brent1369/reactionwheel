@@ -23,8 +23,8 @@
 //const char* ssid = "Xperia XA2_e9a9";
 //const char* password = "brent123";
 
-const char* ssid = "telenet-A6AD7E7";
-const char* password = "vzemhjvX4arp";
+const char* ssid = "SiemenCool69";
+const char* password = "12345678";
 
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
@@ -852,7 +852,7 @@ void driveMotor2(double dutyCycle) {
 
   dutyCycle = 100 - abs(int(dutyCycle));
   // Convert to absolute PWM value (0-255)
-  mcpwm_set_duty(MCPWM_UNIT_1, MCPWM_TIMER_1, MCPWM_OPR_A, dutyCycle);
+  mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM_OPR_A, dutyCycle);
 }
 
 float weighted_speed(float speed) {
@@ -1004,7 +1004,7 @@ float changederivative = 0;
 
 
 
-    target_pitch = constrain(target_pitch, -15, 15);  
+    target_pitch = constrain(target_pitch, -30, 30);  
 
     float error1 = target_pitch - global_pitch;
 
@@ -1051,7 +1051,7 @@ float changederivative = 0;
 
     float pid_output2 = Kp2 * error2 + Ki2 * integral_error2 + Kd2 * derivative2; 
     //pid_output2 = constrain(pid_output2, -100, 100);  
-    //pid_output2 = setMotorAcceleration2(pid_output2);
+    pid_output2 = setMotorAcceleration2(0);
     //pid_output2 = constrain(pid_output2, -100, 100);  
 
 

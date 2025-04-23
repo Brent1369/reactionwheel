@@ -62,6 +62,8 @@ void handleData();
 #define TACHO_A2 17
 #define TACHO_B2 16
 
+#define BUTTON 26
+
 
 void MainLoop(void *pvParameter);
 void loop2(void *pvParameter);
@@ -116,8 +118,8 @@ float maxspeed = 3300;
 float pid_output1 = 0;
 float pid_output2 =0;
 
-float target_pitch = 1;  //1;
-float target_roll = 0;
+float target_pitch = 3;  //1;
+float target_roll = 2;
 
 QueueHandle_t pcntQueue;  // FreeRTOS queue for ISR → Task communication
 
@@ -367,53 +369,73 @@ void handleRoot(AsyncWebServerRequest *request) {
       <h3>Motor 1 (Pitch)</h3>
       <div>
         <label for="p1">P:</label>
-        <input type="number" id="p1" value="80.0" step="0.1">
+        <input type="number" id="p1" value=")=====";
+      html += String(Kp1, 1);
+    html += R"=====(" step="0.1">
+        </div>
+        <div>
+          <label for="i1">I:</label>
+          <input type="number" id="i1" value=")=====";
+    html += String(Ki1, 2);
+    html += R"=====(" step="0.01">
+        </div>
+        <div>
+          <label for="d1">D:</label>
+          <input type="number" id="d1" value=")=====";
+    html += String(Kd1, 1);
+    html += R"=====(" step="0.1">
+        </div>
+        <div>
+          <label for="multiplier1">Multiplier:</label>
+          <input type="number" id="multiplier1" value=")=====";
+    html += String(motorMultiplier1, 1);
+    html += R"=====(" step="0.1" min="0.1" max="5.0">
+        </div>
+        <div>
+          <label for="target1">Target:</label>
+          <input type="number" id="target1" value=")=====";
+    html += String(target_pitch, 1);
+    html += R"=====(" step="0.1">
+        </div>
+        <button onclick="updatePID(1)">Update</button>
       </div>
-      <div>
-        <label for="i1">I:</label>
-        <input type="number" id="i1" value="0.0" step="0.01">
+      
+      <div class="pid-group">
+        <h3>Motor 2 (Roll)</h3>
+        <div>
+          <label for="p2">P:</label>
+          <input type="number" id="p2" value=")=====";
+    html += String(Kp2, 1);
+    html += R"=====(" step="0.1">
+        </div>
+        <div>
+          <label for="i2">I:</label>
+          <input type="number" id="i2" value=")=====";
+    html += String(Ki2, 2);
+    html += R"=====(" step="0.01">
+        </div>
+        <div>
+          <label for="d2">D:</label>
+          <input type="number" id="d2" value=")=====";
+    html += String(Kd2, 1);
+    html += R"=====(" step="0.1">
+        </div>
+        <div>
+          <label for="multiplier2">Multiplier:</label>
+          <input type="number" id="multiplier2" value=")=====";
+    html += String(motorMultiplier2, 1);
+    html += R"=====(" step="0.1" min="0.1" max="5.0">
+        </div>
+        <div>
+          <label for="target2">Target:</label>
+          <input type="number" id="target2" value=")=====";
+    html += String(target_roll, 1);
+    html += R"=====(" step="0.1">
+        </div>
+        <button onclick="updatePID(2)">Update</button>
       </div>
-      <div>
-        <label for="d1">D:</label>
-        <input type="number" id="d1" value="10.0" step="0.1">
-      </div>
-      <div>
-        <label for="multiplier1">Multiplier:</label>
-        <input type="number" id="multiplier1" value="-200.0" step="0.1" min="0.1" max="5.0">
-      </div>
+    </div>
 
-      <div>
-        <label for="target1">Target:</label>
-        <input type="number" id="target1" value="0.0" step="0.1">
-      </div>
-      <button onclick="updatePID(1)">Update</button>
-    </div>
-    
-    <div class="pid-group">
-      <h3>Motor 2 (Roll)</h3>
-      <div>
-        <label for="p2">P:</label>
-        <input type="number" id="p2" value="80.0" step="0.1">
-      </div>
-      <div>
-        <label for="i2">I:</label>
-        <input type="number" id="i2" value="0.0" step="0.01">
-      </div>
-      <div>
-        <label for="d2">D:</label>
-        <input type="number" id="d2" value="10.0" step="0.1">
-      </div>
-      <div>
-        <label for="multiplier2">Multiplier:</label>
-        <input type="number" id="multiplier2" value="-200.0" step="0.1" min="0.1" max="5.0">
-      </div>
-      <div>
-        <label for="target2">Target:</label>
-        <input type="number" id="target2" value="0.0" step="0.1">
-      </div>
-      <button onclick="updatePID(2)">Update</button>
-    </div>
-  </div>
 
   <div id="chartControls">
     <button id="pauseBtn">Pause</button>
@@ -665,15 +687,50 @@ void handlePID() {
 
 void setup() {
 
+
+
+
+
+
+
+  // Configure MCPWM parameters for the first PWM output (PWM_GPIO1)
+  mcpwm_config_t pwm_config1;
+  pwm_config1.frequency = 20000;                // 20 kHz frequency
+  pwm_config1.cmpr_a = 100.0;                    // Duty cycle for MCPWM0A (50%)
+  pwm_config1.cmpr_b = 0.0;                     // Not useds
+  pwm_config1.counter_mode = MCPWM_UP_COUNTER;  // Count-up mode
+  pwm_config1.duty_mode = MCPWM_DUTY_MODE_0;    // Active high duty cycle
+
+  // Apply configuration to MCPWM Timer 0
+  mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_0, &pwm_config1);
+
+  // Configure MCPWM parameters for the second PWM output (PWM_GPIO2)
+  mcpwm_config_t pwm_config2;
+  pwm_config2.frequency = 20000;                // 20 kHz frequency
+  pwm_config2.cmpr_a = 100.0;                    // Duty cycle for MCPWM1A (25%)
+  pwm_config2.cmpr_b = 0.0;                     // Not used
+  pwm_config2.counter_mode = MCPWM_UP_COUNTER;  // Count-up mode
+  pwm_config2.duty_mode = MCPWM_DUTY_MODE_0;    // Active high duty cycle
+
+  // Apply configuration to MCPWM Timer 1
+  mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_1, &pwm_config2);
+
+
+  mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0A, PWM_GPIO1);  // GPIO23 for PWM0A
+  mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM1A, PWM_GPIO2);  // GPIO22 for PWM1A
+
+
+
   //Serial.begin(115200);
   Serial.begin(500000);
-  delay(1000);
+  //delay(1000);
 
   Wire.begin();
   pinMode(DIRECTION_PIN1, OUTPUT);
   pinMode(DIRECTION_PIN2, OUTPUT);
   Serial.println("test");
 
+  pinMode(BUTTON, INPUT_PULLDOWN);
   /*
     tuner.Configure(
         360.0f,                    // Input span (degrees)
@@ -716,32 +773,10 @@ void setup() {
     //while (1);
   }
 
+//delay(10000);
   // Initialize MCPWM unit
   // Initialize GPIOs for PWM outputs
-  mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0A, PWM_GPIO1);  // GPIO23 for PWM0A
-  mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM1A, PWM_GPIO2);  // GPIO22 for PWM1A
-
-  // Configure MCPWM parameters for the first PWM output (PWM_GPIO1)
-  mcpwm_config_t pwm_config1;
-  pwm_config1.frequency = 20000;                // 20 kHz frequency
-  pwm_config1.cmpr_a = 50.0;                    // Duty cycle for MCPWM0A (50%)
-  pwm_config1.cmpr_b = 0.0;                     // Not useds
-  pwm_config1.counter_mode = MCPWM_UP_COUNTER;  // Count-up mode
-  pwm_config1.duty_mode = MCPWM_DUTY_MODE_0;    // Active high duty cycle
-
-  // Apply configuration to MCPWM Timer 0
-  mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_0, &pwm_config1);
-
-  // Configure MCPWM parameters for the second PWM output (PWM_GPIO2)
-  mcpwm_config_t pwm_config2;
-  pwm_config2.frequency = 20000;                // 20 kHz frequency
-  pwm_config2.cmpr_a = 50.0;                    // Duty cycle for MCPWM1A (25%)
-  pwm_config2.cmpr_b = 0.0;                     // Not used
-  pwm_config2.counter_mode = MCPWM_UP_COUNTER;  // Count-up mode
-  pwm_config2.duty_mode = MCPWM_DUTY_MODE_0;    // Active high duty cycle
-
-  // Apply configuration to MCPWM Timer 1
-  mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_1, &pwm_config2);
+  
 
 
 
@@ -822,7 +857,7 @@ void setup() {
   WiFi.setSleep(false);
 
 
-  vTaskDelay(20000);
+  //vTaskDelay(20000);
 
 
   pcntQueue = xQueueCreate(10, sizeof(int));  // Queue for PCNT data
@@ -932,6 +967,9 @@ void driveMotor1(double dutyCycle) {
     digitalWrite(DIRECTION_PIN1, HIGH);  // Reverse
   }
 
+  if(digitalRead(BUTTON) == 0){ //switch = 0 = turn motor off
+    dutyCycle = 0;
+  }
 
   dutyCycle = 100 - abs(int(dutyCycle));
   // Convert to absolute PWM value (0-255)
@@ -951,6 +989,9 @@ void driveMotor2(double dutyCycle) {
     digitalWrite(DIRECTION_PIN2, HIGH);  // Reverse
   }
 
+  if(digitalRead(BUTTON) == 0){ //switch = 0 = turn motor off
+    dutyCycle = 0;
+  }
 
   dutyCycle = 100 - abs(int(dutyCycle));
   // Convert to absolute PWM value (0-255)
@@ -1104,7 +1145,7 @@ void MainLoop(void *pvParameter) {
 
 
 
-    target_pitch = constrain(target_pitch, -15, 15);
+    //target_pitch = constrain(target_pitch, -15, 15);
 
     float error1 = target_pitch - global_pitch;
 
@@ -1392,14 +1433,15 @@ void printAttitude(float ax, float ay, float az, float gx, float gy, float gz) {
 
   float sensitivityFactor = 2000.0 / 32768.0;  // This is the scaling factor
 
-  gx = imu.calcGyro(imu.gx) -1.5;//- 2.5;
-  gy = imu.calcGyro(imu.gy) + 3.2;  //+ 0.5;  // Set gy to calculated DPS
+ 
+  gy = imu.calcGyro(imu.gy) + 0.5;  //+ 0.5;  // pitch
+  gx = imu.calcGyro(imu.gx) -2.5;//- 2.5;  //roll
 
 
 global_pitch_gyro = gy;
 global_roll_gyro = gx;
   // Update last update time
-  lastUpdate = now;
+  lastUpdate = now; gx = imu.calcGyro(imu.gx) -1.5;//- 2.5;  //roll
 
   // Compute roll and pitch from accelerometer
   float accel_roll = atan2(ay, sqrt(ax * ax + az * az)) * 180.0 / PI;

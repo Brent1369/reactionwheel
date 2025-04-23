@@ -1,2 +1,5 @@
-todo:gyro calibratie
-add libs arduino
+todo:
+balancing easier
+gyro calibratie
+hoek calibratie
+multiple wifi

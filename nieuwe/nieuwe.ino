@@ -63,7 +63,7 @@ void handleData();
 #define TACHO_B2 16
 
 
-void loop1(void *pvParameter);
+void MainLoop(void *pvParameter);
 void loop2(void *pvParameter);
 void loop3(void *pvParameter);
 void loop4(void *pvParameter);
@@ -770,7 +770,7 @@ void setup() {
   // MD5(admin) = 21232f297a57a5a743894a0e4a801fc3
   // ArduinoOTA.setPasswordHash("21232f297a57a5a743894a0e4a801fc3");
 
-  /*
+  
   ArduinoOTA
     .onStart([]() {
       String type;
@@ -798,7 +798,7 @@ void setup() {
     });
 
     ArduinoOTA.begin();
-*/
+
 
   Serial.println("Ready");
   Serial.print("IP address: ");
@@ -834,7 +834,7 @@ void setup() {
   setupPcnt1();
   setupPcnt2();
 
-  xTaskCreatePinnedToCore(loop1, "loop1", 2048 * 2, NULL, 5, NULL, CONFIG_ARDUINO_RUNNING_CORE);
+  xTaskCreatePinnedToCore(MainLoop, "MainLoop", 2048 * 2, NULL, 5, NULL, CONFIG_ARDUINO_RUNNING_CORE);
 
   //xTaskCreatePinnedToCore(&loop2, "loop2", 2048 * 2, NULL, 5, NULL, 0);
 
@@ -1031,7 +1031,7 @@ String dataBuffer = "";
 
 
 
-void loop1(void *pvParameter) {
+void MainLoop(void *pvParameter) {
 
 
 
@@ -1741,7 +1741,7 @@ void setupPcnt2() {
 void ServerTask(void *pvParameter) {
   while (1) {
 
-    //ArduinoOTA.handle();
+    ArduinoOTA.handle();
     //server.handleClient();
     vTaskDelay(100);
   }

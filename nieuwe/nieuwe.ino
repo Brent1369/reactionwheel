@@ -23,8 +23,11 @@
 //const char* ssid = "Xperia XA2_e9a9";
 //const char* password = "brent123";
 
-const char* ssid = "SiemenCool69";
-const char* password = "12345678";
+
+const char *ssid = "telenet-A6AD7E7";
+const char *password = "vzemhjvX4arp";
+
+
 
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
@@ -33,9 +36,9 @@ LSM9DS1 imu;
 
 
 //#define PRINT_RAW
-static unsigned long lastPrint = 0; // Keep track of print time
+static unsigned long lastPrint = 0;  // Keep track of print time
 
-#define DECLINATION -8.58 // Declination (degrees) in Boulder, CO.
+#define DECLINATION -8.58  // Declination (degrees) in Boulder, CO.
 
 //Function definitions
 void printGyro();
@@ -47,10 +50,10 @@ void handlePID();
 void handleData();
 
 
-#define PWM_GPIO1  23  // Define the GPIO pin for the PWM signal
+#define PWM_GPIO1 23  // Define the GPIO pin for the PWM signal
 #define DIRECTION_PIN1 32
 
-#define PWM_GPIO2  25
+#define PWM_GPIO2 25
 #define DIRECTION_PIN2 33
 
 //#define i2cclock 22
@@ -62,8 +65,10 @@ void handleData();
 #define TACHO_A2 17
 #define TACHO_B2 16
 
+#define BUTTON 26
 
-void loop1(void *pvParameter);
+
+void MainLoop(void *pvParameter);
 void loop2(void *pvParameter);
 void loop3(void *pvParameter);
 void loop4(void *pvParameter);
@@ -82,41 +87,54 @@ void setupPcnt2();
 //#include "PID_AutoTune_v0.h"
 
 
-double global_pitch;
-float global_roll;
+float global_pitch =0;
+float global_pitch_accel =0;
+float global_pitch_gyro = 0;
+float global_roll =0;
+float global_roll_accel =0;
+float global_roll_gyro = 0;
 
 //#include <WebServer.h>
 //WebServer server(80);  // HTTP server on port 80
 
-double Kp1 = 80.0;   // Proportional Gain (Increase for faster response)
-double Ki1 = 0.0;    // Derivative Gain (Increase to reduce overshoot)
-double Kd1 = 10.0;
+float Kp1 = 80.0;  // Proportional Gain (Increase for faster response)
+float Ki1 = 0.0;   // Derivative Gain (Increase to reduce overshoot)
+float Kd1 = 10.0;
+float motorMultiplier1 = -200;
+float motorMultiplier2 = -200;
 
-double Kp2 = 80.0;   // Proportional Gain (Increase for faster response)
-double Ki2 = 0.0;    // Derivative Gain (Increase to reduce overshoot)
-double Kd2 = 10.0;
+float Kp2 = 80.0;  // Proportional Gain (Increase for faster response)
+float Ki2 = 0.0;   // Derivative Gain (Increase to reduce overshoot)
+float Kd2 = 10.0;
 
 double Setpoint1 = 0;
-double Output1 = 0;
+float Output1 = 0;
 
-double Setpoint2 = 0;
-double Output2 = 0;
+float Setpoint2 = 0;
+float Output2 = 0;
 
+float tachSpeed1 = 0;
+float tachSpeed1RA = 0;
+float tachSpeed2RA = 0;
+float tachSpeed2 = 0;
+float maxspeed = 3300;
+float pid_output1 = 0;
+float pid_output2 =0;
 
-  float target_pitch = 1;//1; 
-  float target_roll = 0; 
+float target_pitch = 3;  //1;
+float target_roll = 2;
 
 QueueHandle_t pcntQueue;  // FreeRTOS queue for ISR → Task communication
 
 
-  TaskHandle_t tachoTaskHandle1 = NULL;  // Declare the task handle
-  TaskHandle_t tachoTaskHandle2 = NULL;  // Declare the task handle
+TaskHandle_t tachoTaskHandle1 = NULL;  // Declare the task handle
+TaskHandle_t tachoTaskHandle2 = NULL;  // Declare the task handle
 
 
 
-void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, 
-              AwsEventType type, void *arg, uint8_t *data, size_t len) {
-  switch(type) {
+void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
+               AwsEventType type, void *arg, uint8_t *data, size_t len) {
+  switch (type) {
     case WS_EVT_CONNECT:
       Serial.printf("Client %u connected\n", client->id());
       break;
@@ -124,37 +142,34 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
       Serial.printf("Client %u disconnected\n", client->id());
       break;
     case WS_EVT_DATA:
-      // Handle PID updates
-      if(len > 0) {
-        String message = String((char*)data, len);
-        if(message.indexOf('/') != -1) {
-          // Format: "motorNum/P/I/D/target"
+      if (len > 0) {
+        String message = String((char *)data, len);
+        if (message.indexOf('/') != -1) {
+          // Format: "motorNum/P/I/D/target/multiplier"
           int motorNum = message.substring(0, message.indexOf('/')).toInt();
           message = message.substring(message.indexOf('/') + 1);
-          
+
           float p = message.substring(0, message.indexOf('/')).toFloat();
           message = message.substring(message.indexOf('/') + 1);
-          
+
           float i = message.substring(0, message.indexOf('/')).toFloat();
           message = message.substring(message.indexOf('/') + 1);
-          
+
           float d = message.substring(0, message.indexOf('/')).toFloat();
-          float target = message.substring(message.indexOf('/') + 1).toFloat();
-          
-          if(motorNum == 1) {
-            Kp1 = p;
-            Ki1 = i;
-            Kd1 = d;
+          message = message.substring(message.indexOf('/') + 1);
+
+          float target = message.substring(0, message.indexOf('/')).toFloat();
+          float multiplier = message.substring(message.indexOf('/') + 1).toFloat();
+
+          if (motorNum == 1) {
+            Kp1 = p; Ki1 = i; Kd1 = d;
             target_pitch = target;
-          } else if(motorNum == 2) {
-            Kp2 = p;
-            Ki2 = i;
-            Kd2 = d;
+            motorMultiplier1 = multiplier;
+          } else if (motorNum == 2) {
+            Kp2 = p; Ki2 = i; Kd2 = d;
             target_roll = target;
+            motorMultiplier2 = multiplier;
           }
-          
-          Serial.printf("Updated PID for motor %d: P=%.2f I=%.2f D=%.2f Target=%.2f\n",
-                       motorNum, p, i, d, target);
         }
       }
       break;
@@ -166,10 +181,113 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
 
 
 
+  struct GraphConfig {
+    const char *name;
+    const char *label;
+    const char *color;
+    volatile float *valuePtr;
+    float min;
+    float max;
+    const char *axis;
+  };
+
+  
+
+  // Define all graph variables in ONE PLACE
+  const GraphConfig variables[] = {
+    { "pitch", "Pitch Angle (°)", "rgb(255, 99, 132)", &global_pitch, -15, 15, "y" },
+    { "roll", "Roll Angle (°)", "rgb(255, 159, 64)", &global_roll, -15, 15, "y" },
+
+    { "pitch_accel", "Pitch Angle accel (°)", "rgb(255, 99, 132)", &global_pitch_accel, -15, 15, "y" },
+    { "roll_accel", "Roll Angle accel (°)", "rgb(255, 159, 64)", &global_roll_accel, -15, 15, "y" },
+
+    { "pitch_gyro", "Pitch gyro dps", "rgb(255, 99, 132)", &global_pitch_gyro, -15, 15, "y" },
+    { "roll_gyro", "Roll gyro dps", "rgb(255, 159, 64)", &global_roll_gyro, -15, 15, "y" },
+
+
+
+    { "speed1", "Motor 1 (RPM)", "rgb(54, 162, 235)", &tachSpeed1, -50, 50, "y1" },
+    { "speed2", "Motor 2 (RPM)", "rgb(75, 192, 192)", &tachSpeed2, -50, 50, "y1" },
+    { "pid1", "PID Output 1", "rgb(153, 102, 255)", &pid_output1, -100, 100, "y2" },
+    { "pid2", "PID Output 2", "rgb(201, 203, 207)", &pid_output2, -100, 100, "y2" }
+  };
+
+
+  void sendGraphData() {
+  static unsigned long lastSend = 0;
+  if (millis() - lastSend >= 50 && ws.count() > 0) {
+    String result = "";
+    for (size_t i = 0; i < 10; i++) {
+      result += String(*variables[i].valuePtr, 2);  // Two decimal places
+      if (i < sizeof(variables) / sizeof(variables[0]) - 1) {
+        result += ",";
+      }
+    }
+    result += ";";
+    ws.textAll(result);
+    lastSend = millis();
+  }
+}
 
 
 // HTML Page Handler
 void handleRoot(AsyncWebServerRequest *request) {
+
+  // Central configuration - the ONLY place to edit variables
+
+
+
+  // Generate datasets JavaScript dynamically
+  String datasetsJS;
+  for (size_t i = 0; i < sizeof(variables) / sizeof(variables[0]); i++) {
+    if (i > 0) datasetsJS += ",";
+    datasetsJS += "{";
+    datasetsJS += "label:'" + String(variables[i].label) + "',";
+    datasetsJS += "borderColor:'" + String(variables[i].color) + "',";
+    String colorStr = String(variables[i].color);
+    colorStr.replace(")", ",0.1)");
+    datasetsJS += "backgroundColor:'" + colorStr + "',";
+    datasetsJS += "borderWidth:1,pointRadius:0,";
+    datasetsJS += "yAxisID:'" + String(variables[i].axis) + "',";
+    datasetsJS += "data:[]";
+    datasetsJS += "}";
+  }
+
+  // Generate axes configuration
+  String axesJS = R"=====(
+    x: {
+      type: 'realtime',
+      realtime: {
+        duration: 10000,
+        refresh: 100,
+        delay: 50,
+        pause: false,
+        ttl: 100000
+
+      }
+    },
+    y: {
+      title: { display: true, text: 'Angle (°)' },
+      beginAtZero: false,  // Let the scale adapt to data
+        grace: '5%'  // Add 5% padding above/below data
+    },
+    y1: {
+      position: 'right',
+      title: { display: true, text: 'Speed (RPM)' },
+      grid: { drawOnChartArea: false },
+      beginAtZero: false,  // Let the scale adapt to data
+      grace: '5%'  // Add 5% padding above/below data
+    },
+    y2: {
+      position: 'right',
+      title: { display: true, text: 'PID Output' },
+      grid: { drawOnChartArea: false },
+      display: false,
+      beginAtZero: false,  // Let the scale adapt to data
+      grace: '5%'  // Add 5% padding above/below data
+    }
+  )=====";
+
   String html = R"=====(
 <!DOCTYPE html>
 <html>
@@ -254,44 +372,73 @@ void handleRoot(AsyncWebServerRequest *request) {
       <h3>Motor 1 (Pitch)</h3>
       <div>
         <label for="p1">P:</label>
-        <input type="number" id="p1" value="80.0" step="0.1">
+        <input type="number" id="p1" value=")=====";
+      html += String(Kp1, 1);
+    html += R"=====(" step="0.1">
+        </div>
+        <div>
+          <label for="i1">I:</label>
+          <input type="number" id="i1" value=")=====";
+    html += String(Ki1, 2);
+    html += R"=====(" step="0.01">
+        </div>
+        <div>
+          <label for="d1">D:</label>
+          <input type="number" id="d1" value=")=====";
+    html += String(Kd1, 1);
+    html += R"=====(" step="0.1">
+        </div>
+        <div>
+          <label for="multiplier1">Multiplier:</label>
+          <input type="number" id="multiplier1" value=")=====";
+    html += String(motorMultiplier1, 1);
+    html += R"=====(" step="0.1" min="0.1" max="5.0">
+        </div>
+        <div>
+          <label for="target1">Target:</label>
+          <input type="number" id="target1" value=")=====";
+    html += String(target_pitch, 1);
+    html += R"=====(" step="0.1">
+        </div>
+        <button onclick="updatePID(1)">Update</button>
       </div>
-      <div>
-        <label for="i1">I:</label>
-        <input type="number" id="i1" value="0.0" step="0.01">
+      
+      <div class="pid-group">
+        <h3>Motor 2 (Roll)</h3>
+        <div>
+          <label for="p2">P:</label>
+          <input type="number" id="p2" value=")=====";
+    html += String(Kp2, 1);
+    html += R"=====(" step="0.1">
+        </div>
+        <div>
+          <label for="i2">I:</label>
+          <input type="number" id="i2" value=")=====";
+    html += String(Ki2, 2);
+    html += R"=====(" step="0.01">
+        </div>
+        <div>
+          <label for="d2">D:</label>
+          <input type="number" id="d2" value=")=====";
+    html += String(Kd2, 1);
+    html += R"=====(" step="0.1">
+        </div>
+        <div>
+          <label for="multiplier2">Multiplier:</label>
+          <input type="number" id="multiplier2" value=")=====";
+    html += String(motorMultiplier2, 1);
+    html += R"=====(" step="0.1" min="0.1" max="5.0">
+        </div>
+        <div>
+          <label for="target2">Target:</label>
+          <input type="number" id="target2" value=")=====";
+    html += String(target_roll, 1);
+    html += R"=====(" step="0.1">
+        </div>
+        <button onclick="updatePID(2)">Update</button>
       </div>
-      <div>
-        <label for="d1">D:</label>
-        <input type="number" id="d1" value="10.0" step="0.1">
-      </div>
-      <div>
-        <label for="target1">Target:</label>
-        <input type="number" id="target1" value="0.0" step="0.1">
-      </div>
-      <button onclick="updatePID(1)">Update</button>
     </div>
-    
-    <div class="pid-group">
-      <h3>Motor 2 (Roll)</h3>
-      <div>
-        <label for="p2">P:</label>
-        <input type="number" id="p2" value="80.0" step="0.1">
-      </div>
-      <div>
-        <label for="i2">I:</label>
-        <input type="number" id="i2" value="0.0" step="0.01">
-      </div>
-      <div>
-        <label for="d2">D:</label>
-        <input type="number" id="d2" value="10.0" step="0.1">
-      </div>
-      <div>
-        <label for="target2">Target:</label>
-        <input type="number" id="target2" value="0.0" step="0.1">
-      </div>
-      <button onclick="updatePID(2)">Update</button>
-    </div>
-  </div>
+
 
   <div id="chartControls">
     <button id="pauseBtn">Pause</button>
@@ -319,8 +466,13 @@ void handleRoot(AsyncWebServerRequest *request) {
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@1.2.1/dist/chartjs-plugin-zoom.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-streaming@2.0.0/dist/chartjs-plugin-streaming.min.js"></script>
 
-
   <script>
+    // Central configuration for all graph variables
+    const graphConfig = {
+      datasets: [)=====" + datasetsJS + R"=====(],
+      axes: {)=====" + axesJS + R"=====(}
+    };
+
     let ws;
     let chart;
     let isPaused = false;
@@ -349,10 +501,11 @@ void handleRoot(AsyncWebServerRequest *request) {
         const points = event.data.split(';').filter(point => point.trim() !== '');
         
         points.forEach(entry => {
-          const [pitch, speed] = entry.split(',').map(Number);
-          if (!isNaN(pitch) && !isNaN(speed)) {
-            chart.data.datasets[0].data.push({ x: now, y: pitch });
-            chart.data.datasets[1].data.push({ x: now, y: speed });
+          const values = entry.split(',').map(Number);
+          if (values.length === graphConfig.datasets.length) {
+            values.forEach((val, i) => {
+              chart.data.datasets[i].data.push({ x: now, y: val });
+            });
           }
         });
         
@@ -363,15 +516,17 @@ void handleRoot(AsyncWebServerRequest *request) {
     }
     
     function updatePID(motorNum) {
-      const prefix = motorNum === 1 ? '1' : '2';
+      const prefix = motorNum;
       const p = document.getElementById('p' + prefix).value;
       const i = document.getElementById('i' + prefix).value;
       const d = document.getElementById('d' + prefix).value;
       const target = document.getElementById('target' + prefix).value;
-      
-      const command = `${motorNum}/${p}/${i}/${d}/${target}`;
+      const multiplier = document.getElementById('multiplier' + prefix).value;
+
+      const command = `${motorNum}/${p}/${i}/${d}/${target}/${multiplier}`;
       ws.send(command);
       console.log("Sent PID update:", command);
+      updateStatus(`Updated Motor ${motorNum} PID: P=${p} I=${i} D=${d} Target=${target}`);
     }
     
     function updateStatus(message) {
@@ -409,29 +564,15 @@ void handleRoot(AsyncWebServerRequest *request) {
     }
     
     function initChart() {
+      // Initialize Hammer.js for touch gestures
+      new Hammer(document.getElementById('chart'));
+      
       const ctx = document.getElementById('chart').getContext('2d');
       chart = new Chart(ctx, {
         type: 'line',
         data: {
-          datasets: [
-            {
-              label: 'Pitch Angle (°)',
-              borderColor: 'rgb(255, 99, 132)',
-              backgroundColor: 'rgba(255, 99, 132, 0.1)',
-              borderWidth: 1,
-              pointRadius: 0,
-              data: []
-            },
-            {
-              label: 'Motor Speed (RPM)',
-              borderColor: 'rgb(54, 162, 235)',
-              backgroundColor: 'rgba(54, 162, 235, 0.1)',
-              borderWidth: 1,
-              pointRadius: 0,
-              data: [],
-              yAxisID: 'y1'
-            }
-          ]
+          datasets: graphConfig.datasets
+    
         },
         options: {
           responsive: true,
@@ -451,23 +592,18 @@ void handleRoot(AsyncWebServerRequest *request) {
                 delay: 100,
                 pause: false,
                 ttl: 20000,
+
+
                 onRefresh: chart => {
                   if (!isPaused && !chart.zoom._isPanning && !chart.zoom._isZooming) {
                     chart.options.scales.x.realtime.pause = false;
                   }
                 }
+                
               }
+              
             },
-            y: {
-              title: { display: true, text: 'Pitch Angle (°)' },
-              suggestedMin: -10,
-              suggestedMax: 10
-            },
-            y1: {
-              position: 'right',
-              title: { display: true, text: 'Motor Speed (RPM)' },
-              grid: { drawOnChartArea: false }
-            }
+            ...graphConfig.axes
           },
           plugins: {
             zoom: {
@@ -500,9 +636,7 @@ void handleRoot(AsyncWebServerRequest *request) {
                   borderWidth: 1,
                   threshold: 0
                 },
-
                 mode: 'x',
-
                 onZoomStart: () => {
                   chart.options.scales.x.realtime.pause = true;
                   updateStatus("Zooming - Select area with Shift+Drag");
@@ -556,16 +690,51 @@ void handlePID() {
 
 void setup() {
 
-    //Serial.begin(115200);
-    Serial.begin(500000);
-    delay(1000);
 
-    Wire.begin();
-    pinMode(DIRECTION_PIN1, OUTPUT);
-    pinMode(DIRECTION_PIN2, OUTPUT);
-    Serial.println("test");
 
-/*
+
+
+
+
+  // Configure MCPWM parameters for the first PWM output (PWM_GPIO1)
+  mcpwm_config_t pwm_config1;
+  pwm_config1.frequency = 20000;                // 20 kHz frequency
+  pwm_config1.cmpr_a = 100.0;                    // Duty cycle for MCPWM0A (50%)
+  pwm_config1.cmpr_b = 0.0;                     // Not useds
+  pwm_config1.counter_mode = MCPWM_UP_COUNTER;  // Count-up mode
+  pwm_config1.duty_mode = MCPWM_DUTY_MODE_0;    // Active high duty cycle
+
+  // Apply configuration to MCPWM Timer 0
+  mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_0, &pwm_config1);
+
+  // Configure MCPWM parameters for the second PWM output (PWM_GPIO2)
+  mcpwm_config_t pwm_config2;
+  pwm_config2.frequency = 20000;                // 20 kHz frequency
+  pwm_config2.cmpr_a = 100.0;                    // Duty cycle for MCPWM1A (25%)
+  pwm_config2.cmpr_b = 0.0;                     // Not used
+  pwm_config2.counter_mode = MCPWM_UP_COUNTER;  // Count-up mode
+  pwm_config2.duty_mode = MCPWM_DUTY_MODE_0;    // Active high duty cycle
+
+  // Apply configuration to MCPWM Timer 1
+  mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_1, &pwm_config2);
+
+
+  mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0A, PWM_GPIO1);  // GPIO23 for PWM0A
+  mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM1A, PWM_GPIO2);  // GPIO22 for PWM1A
+
+
+
+  //Serial.begin(115200);
+  Serial.begin(500000);
+  //delay(1000);
+
+  Wire.begin();
+  pinMode(DIRECTION_PIN1, OUTPUT);
+  pinMode(DIRECTION_PIN2, OUTPUT);
+  Serial.println("test");
+
+  pinMode(BUTTON, INPUT_PULLDOWN);
+  /*
     tuner.Configure(
         360.0f,                    // Input span (degrees)
         OUTPUT_MAX - OUTPUT_MIN,   // Output span (200 for -100 to 100)
@@ -584,71 +753,49 @@ void setup() {
 */
 
 
-    imu.settings.gyro.enabled = true;
-    imu.settings.gyro.scale = 2000; // Max sensitivity for fast motion
-    imu.settings.gyro.sampleRate = 6; // 952 Hz (fastest)
-    imu.settings.gyro.bandwidth = 3; // Highest bandwidth
-    imu.settings.gyro.HPFEnable = false; // Raw data, no high-pass filtering
+  imu.settings.gyro.enabled = true;
+  imu.settings.gyro.scale = 2000;       // Max sensitivity for fast motion
+  imu.settings.gyro.sampleRate = 6;     // 952 Hz (fastest)
+  imu.settings.gyro.bandwidth = 3;      // Highest bandwidth
+  imu.settings.gyro.HPFEnable = false;  // Raw data, no high-pass filtering
 
 
-    imu.settings.accel.enabled = true;
-    imu.settings.accel.scale = 16; // Highest motion range
-    imu.settings.accel.sampleRate = 6; // 952 Hz (fastest)
-    imu.settings.accel.bandwidth = 0; // Max bandwidth (408 Hz)
-    imu.settings.accel.highResEnable = true; // More precision
+  imu.settings.accel.enabled = true;
+  imu.settings.accel.scale = 16;            // Highest motion range
+  imu.settings.accel.sampleRate = 6;        // 952 Hz (fastest)
+  imu.settings.accel.bandwidth = 0;         // Max bandwidth (408 Hz)
+  imu.settings.accel.highResEnable = true;  // More precision
 
 
 
-    if (imu.begin() == false) // with no arguments, this uses default addresses (AG:0x6B, M:0x1E) and i2c port (Wire).
-    {
-      Serial.println("Failed to communicate with LSM9DS1.");
-      Serial.println("Double-check wiring.");
-      Serial.println("Default settings in this sketch will work for an out of the box LSM9DS1 Breakout, but may need to be modified if the board jumpers are.");
-      //while (1);
-    }
+  if (imu.begin() == false)  // with no arguments, this uses default addresses (AG:0x6B, M:0x1E) and i2c port (Wire).
+  {
+    Serial.println("Failed to communicate with LSM9DS1.");
+    Serial.println("Double-check wiring.");
+    Serial.println("Default settings in this sketch will work for an out of the box LSM9DS1 Breakout, but may need to be modified if the board jumpers are.");
+    //while (1);
+  }
 
-    // Initialize MCPWM unit
+//delay(10000);
+  // Initialize MCPWM unit
   // Initialize GPIOs for PWM outputs
-    mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0A, PWM_GPIO1);  // GPIO23 for PWM0A
-    mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM1A, PWM_GPIO2);  // GPIO22 for PWM1A
-
-    // Configure MCPWM parameters for the first PWM output (PWM_GPIO1)
-    mcpwm_config_t pwm_config1;
-    pwm_config1.frequency = 20000;  // 20 kHz frequency
-    pwm_config1.cmpr_a = 50.0;      // Duty cycle for MCPWM0A (50%)
-    pwm_config1.cmpr_b = 0.0;       // Not useds
-    pwm_config1.counter_mode = MCPWM_UP_COUNTER;  // Count-up mode
-    pwm_config1.duty_mode = MCPWM_DUTY_MODE_0;    // Active high duty cycle
-
-    // Apply configuration to MCPWM Timer 0
-    mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_0, &pwm_config1);
-
-    // Configure MCPWM parameters for the second PWM output (PWM_GPIO2)
-    mcpwm_config_t pwm_config2;
-    pwm_config2.frequency = 20000;  // 20 kHz frequency
-    pwm_config2.cmpr_a = 25.0;      // Duty cycle for MCPWM1A (25%)
-    pwm_config2.cmpr_b = 0.0;       // Not used
-    pwm_config2.counter_mode = MCPWM_UP_COUNTER;  // Count-up mode
-    pwm_config2.duty_mode = MCPWM_DUTY_MODE_0;    // Active high duty cycle
-
-    // Apply configuration to MCPWM Timer 1
-    mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_1, &pwm_config2);
+  
 
 
 
 
 
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(ssid, password);
-    while (WiFi.waitForConnectResult() != WL_CONNECTED) {
-      Serial.println("Connection Failed! Rebooting...");
-      delay(5000);
-      ESP.restart();
-    }
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  while (WiFi.waitForConnectResult() != WL_CONNECTED) {
+    Serial.println("Connection Failed! Rebooting...");
+    delay(5000);
+    ESP.restart();
+  }
 
 
-        // OTA Setup
-      // Port defaults to 3232
+  // OTA Setup
+  // Port defaults to 3232
   // ArduinoOTA.setPort(3232);
 
   // Hostname defaults to esp3232-[MAC]
@@ -661,7 +808,7 @@ void setup() {
   // MD5(admin) = 21232f297a57a5a743894a0e4a801fc3
   // ArduinoOTA.setPasswordHash("21232f297a57a5a743894a0e4a801fc3");
 
-/*
+  
   ArduinoOTA
     .onStart([]() {
       String type;
@@ -689,59 +836,58 @@ void setup() {
     });
 
     ArduinoOTA.begin();
-*/
-
-    Serial.println("Ready");
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
 
 
+  Serial.println("Ready");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
 
 
 
 
-    ws.onEvent(onWsEvent);
-    server.addHandler(&ws);
-    
-    // Serve HTML
-    server.on("/", HTTP_GET, handleRoot);
-    
-    // Start server
-    server.begin();
-    
-    // Disable WiFi sleep for maximum performance
-    WiFi.setSleep(false);
 
 
-    vTaskDelay(20000);
+  ws.onEvent(onWsEvent);
+  server.addHandler(&ws);
+
+  // Serve HTML
+  server.on("/", HTTP_GET, handleRoot);
+
+  // Start server
+  server.begin();
+
+  // Disable WiFi sleep for maximum performance
+  WiFi.setSleep(false);
 
 
-    pcntQueue = xQueueCreate(10, sizeof(int)); // Queue for PCNT data
-    if (pcntQueue == NULL) {
-        Serial.println("Error creating queue!");
-        return;
-    }
-
-    setupPcnt1();
-    setupPcnt2();
-
-    xTaskCreatePinnedToCore(loop1, "loop1", 2048 * 2, NULL, 5, NULL, CONFIG_ARDUINO_RUNNING_CORE);
-
-    //xTaskCreatePinnedToCore(&loop2, "loop2", 2048 * 2, NULL, 5, NULL, 0);
-    
-    xTaskCreatePinnedToCore(SerialTask, "loop3", 2048 * 2, NULL, 4, NULL, 0);
-    xTaskCreatePinnedToCore(ServerTask, "loop4", 2048 * 2, NULL, 4, NULL, 0);
+  //vTaskDelay(20000);
 
 
-    //xTaskCreatePinnedToCore(&tachoTask, "tachoTask", 2048 * 2, NULL, 4, NULL, 0);
+  pcntQueue = xQueueCreate(10, sizeof(int));  // Queue for PCNT data
+  if (pcntQueue == NULL) {
+    Serial.println("Error creating queue!");
+    return;
+  }
+
+  setupPcnt1();
+  setupPcnt2();
+
+  xTaskCreatePinnedToCore(MainLoop, "MainLoop", 2048 * 2, NULL, 5, NULL, CONFIG_ARDUINO_RUNNING_CORE);
+
+  //xTaskCreatePinnedToCore(&loop2, "loop2", 2048 * 2, NULL, 5, NULL, 0);
+
+  xTaskCreatePinnedToCore(SerialTask, "loop3", 2048 * 2, NULL, 4, NULL, 0);
+  xTaskCreatePinnedToCore(ServerTask, "loop4", 2048 * 2, NULL, 4, NULL, 0);
 
 
-    //xTaskCreatePinnedToCore(tachoTask1, "TachoTask1", 2048, NULL, 5, NULL, 0);
-    //xTaskCreatePinnedToCore(tachoTask2, "TachoTask2", 2048, NULL, 5, NULL, 0);
+  //xTaskCreatePinnedToCore(&tachoTask, "tachoTask", 2048 * 2, NULL, 4, NULL, 0);
 
-    xTaskCreatePinnedToCore(tachoTask1, "TachoTask3", 2048, NULL, 5, &tachoTaskHandle1, 0);
-    xTaskCreatePinnedToCore(tachoTask2, "TachoTask3", 2048, NULL, 5, &tachoTaskHandle2, 0);
 
+  //xTaskCreatePinnedToCore(tachoTask1, "TachoTask1", 2048, NULL, 5, NULL, 0);
+  //xTaskCreatePinnedToCore(tachoTask2, "TachoTask2", 2048, NULL, 5, NULL, 0);
+
+  xTaskCreatePinnedToCore(tachoTask1, "TachoTask3", 2048, NULL, 5, &tachoTaskHandle1, 0);
+  xTaskCreatePinnedToCore(tachoTask2, "TachoTask3", 2048, NULL, 5, &tachoTaskHandle2, 0);
 }
 
 
@@ -765,11 +911,7 @@ float previousDutyCycle2 = 0;
 
 //float motor_speed_pwmX =0;
 
-volatile  float tachSpeed1 = 0;
-volatile float tachSpeed1RA = 0;
-volatile float tachSpeed2RA = 0;
-volatile float tachSpeed2 = 0;
-float maxspeed = 3300;
+
 
 /*
 void sendWebSocketData() {
@@ -782,38 +924,36 @@ void sendWebSocketData() {
   }
 }*/
 
-int setMotorAcceleration1(int PID_OUT){
+int setMotorAcceleration1(int PID_OUT) {
 
   int newDutyCycle = 0;
 
-  PID_OUT = constrain(PID_OUT, -100, 100); 
+  PID_OUT = constrain(PID_OUT, -100, 100);
 
   //previousDutyCycle1 = previousDutyCycle1 * 0.9 + PID_OUT ;
-  previousDutyCycle1 =   PID_OUT;
+  previousDutyCycle1 = PID_OUT;
 
-  //previousDutyCycle =  constrain(PID_OUT + 0.0137 * motor_speed_pwmX, -100, 100); 
+  //previousDutyCycle =  constrain(PID_OUT + 0.0137 * motor_speed_pwmX, -100, 100);
   //motor_speed_pwmX += previousDutyCycle;
 
   driveMotor1(previousDutyCycle1);
   return previousDutyCycle1;
-
 }
 
-int setMotorAcceleration2(int PID_OUT){
+int setMotorAcceleration2(int PID_OUT) {
 
   int newDutyCycle = 0;
 
-  PID_OUT = constrain(PID_OUT, -100, 100); 
+  PID_OUT = constrain(PID_OUT, -100, 100);
 
-  previousDutyCycle2 = previousDutyCycle2 * 0.9 + PID_OUT ;
-  //previousDutyCycle =   PID_OUT;
+  //previousDutyCycle2 = previousDutyCycle2 * 0.9 + PID_OUT;
+  previousDutyCycle2 =   PID_OUT;
 
-  //previousDutyCycle =  constrain(PID_OUT + 0.0137 * motor_speed_pwmX, -100, 100); 
+  //previousDutyCycle =  constrain(PID_OUT + 0.0137 * motor_speed_pwmX, -100, 100);
   //motor_speed_pwmX += previousDutyCycle;
 
   driveMotor2(previousDutyCycle2);
   return previousDutyCycle2;
-
 }
 
 
@@ -821,15 +961,18 @@ int setMotorAcceleration2(int PID_OUT){
 void driveMotor1(double dutyCycle) {
   //Serial.printf("DRIVE COMMAND: %.2f\n", dutyCycle);  // Add this line
 
-  dutyCycle = constrain(dutyCycle, -100, 100); // Clamp to range
+  dutyCycle = constrain(dutyCycle, -100, 100);  // Clamp to range
 
   // Set direction
   if (dutyCycle >= 0) {
     digitalWrite(DIRECTION_PIN1, LOW);  // Forward
   } else {
-    digitalWrite(DIRECTION_PIN1, HIGH); // Reverse
+    digitalWrite(DIRECTION_PIN1, HIGH);  // Reverse
   }
 
+  if(digitalRead(BUTTON) == 0){ //switch = 0 = turn motor off
+    dutyCycle = 0;
+  }
 
   dutyCycle = 100 - abs(int(dutyCycle));
   // Convert to absolute PWM value (0-255)
@@ -840,15 +983,18 @@ void driveMotor1(double dutyCycle) {
 void driveMotor2(double dutyCycle) {
   //Serial.printf("DRIVE COMMAND: %.2f\n", dutyCycle);  // Add this line
 
-  dutyCycle = constrain(dutyCycle, -100, 100); // Clamp to range
+  dutyCycle = constrain(dutyCycle, -100, 100);  // Clamp to range
 
   // Set direction
   if (dutyCycle >= 0) {
     digitalWrite(DIRECTION_PIN2, LOW);  // Forward
   } else {
-    digitalWrite(DIRECTION_PIN2, HIGH); // Reverse
+    digitalWrite(DIRECTION_PIN2, HIGH);  // Reverse
   }
 
+  if(digitalRead(BUTTON) == 0){ //switch = 0 = turn motor off
+    dutyCycle = 0;
+  }
 
   dutyCycle = 100 - abs(int(dutyCycle));
   // Convert to absolute PWM value (0-255)
@@ -856,35 +1002,35 @@ void driveMotor2(double dutyCycle) {
 }
 
 float weighted_speed(float speed) {
-    float multiplier = 1;
-    if (speed <= 300 || speed >= -300) {
-        return speed * multiplier;  // Apply 10x multiplier for values in range [-300, 300]
-    } else if (speed > 300) {
-        return (300 * multiplier) + (speed - 300);  // Apply 10x up to 300, then add extra normally
-    } else { // speed < -300
-        return (-300 * multiplier) + (speed + 300);  // Apply 10x up to -300, then add remaining normally
-    }
+  float multiplier = 1;
+  if (speed <= 300 || speed >= -300) {
+    return speed * multiplier;  // Apply 10x multiplier for values in range [-300, 300]
+  } else if (speed > 300) {
+    return (300 * multiplier) + (speed - 300);   // Apply 10x up to 300, then add extra normally
+  } else {                                       // speed < -300
+    return (-300 * multiplier) + (speed + 300);  // Apply 10x up to -300, then add remaining normally
+  }
 }
 
 
-      static unsigned long last_adjust_time = 0;
-      static float equilibrium_buffer = 0;  
-      static float search_adjustment = 0;  // Adjustment for active search
+static unsigned long last_adjust_time = 0;
+static float equilibrium_buffer = 0;
+static float search_adjustment = 0;  // Adjustment for active search
 
-      // Low-pass filter for smoothing the global_pitch (and tachSpeed1 if needed)
-      float filtered_pitch = 0;  // Filtered global pitch
+// Low-pass filter for smoothing the global_pitch (and tachSpeed1 if needed)
+float filtered_pitch = 0;  // Filtered global pitch
 
-      float angular_acceleration_wheel = 0;
-      float angular_acceleration_wheel_filtered = 0;
-      float previous_angular_velocity_wheel = 0;
-      
-      
+float angular_acceleration_wheel = 0;
+float angular_acceleration_wheel_filtered = 0;
+float previous_angular_velocity_wheel = 0;
+
+
 
 
 #define SAMPLE_SIZE 100  // Number of samples for averaging
 
-float relativeSamplesPositive[SAMPLE_SIZE] = {0};  
-float relativeSamplesNegative[SAMPLE_SIZE] = {0};  
+float relativeSamplesPositive[SAMPLE_SIZE] = { 0 };
+float relativeSamplesNegative[SAMPLE_SIZE] = { 0 };
 int sampleIndexPositive = 0;
 int sampleIndexNegative = 0;
 float relative_avg_positive = 0;
@@ -892,36 +1038,35 @@ float relative_avg_negative = 0;
 
 
 void updateRelativeAverages(float relative, float global_pitch) {
-    if (global_pitch > 0.5) {
-        // Store new value and update moving average for positive angles
-        relativeSamplesPositive[sampleIndexPositive] = relative;
-        sampleIndexPositive = (sampleIndexPositive + 1) % SAMPLE_SIZE;
+  if (global_pitch > 0.5) {
+    // Store new value and update moving average for positive angles
+    relativeSamplesPositive[sampleIndexPositive] = relative;
+    sampleIndexPositive = (sampleIndexPositive + 1) % SAMPLE_SIZE;
 
-        float sum = 0;
-        for (int i = 0; i < SAMPLE_SIZE; i++) {
-            sum += relativeSamplesPositive[i];
-        }
-        relative_avg_positive = sum / SAMPLE_SIZE;
-    } 
-    else if (global_pitch < -0.5) {
-        // Store new value and update moving average for negative angles
-        relativeSamplesNegative[sampleIndexNegative] = relative;
-        sampleIndexNegative = (sampleIndexNegative + 1) % SAMPLE_SIZE;
-
-        float sum = 0;
-        for (int i = 0; i < SAMPLE_SIZE; i++) {
-            sum += relativeSamplesNegative[i];
-        }
-        relative_avg_negative = sum / SAMPLE_SIZE;
+    float sum = 0;
+    for (int i = 0; i < SAMPLE_SIZE; i++) {
+      sum += relativeSamplesPositive[i];
     }
+    relative_avg_positive = sum / SAMPLE_SIZE;
+  } else if (global_pitch < -0.5) {
+    // Store new value and update moving average for negative angles
+    relativeSamplesNegative[sampleIndexNegative] = relative;
+    sampleIndexNegative = (sampleIndexNegative + 1) % SAMPLE_SIZE;
+
+    float sum = 0;
+    for (int i = 0; i < SAMPLE_SIZE; i++) {
+      sum += relativeSamplesNegative[i];
+    }
+    relative_avg_negative = sum / SAMPLE_SIZE;
+  }
 }
 
 
 
 
 void sendData() {
-    String json = String(global_pitch, 2) + "," + String(tachSpeed1, 1);
-    ws.textAll(json);
+  String json = String(global_pitch, 2) + "," + String(tachSpeed1, 1);
+  ws.textAll(json);
 }
 
 #define BATCH_SIZE 20  // 100ms / 5ms = 20 samples per batch
@@ -930,7 +1075,7 @@ String dataBuffer = "";
 
 
 
-void loop1(void *pvParameter) {
+void MainLoop(void *pvParameter) {
 
 
 
@@ -938,36 +1083,36 @@ void loop1(void *pvParameter) {
   float incrementmax = 1;
 
 
-  
-  float integral_error1 = 0;       // NEW: Integral error accumulator
-  float integral_error2 = 0;       // NEW: Integral error accumulator
-  const float max_integral = 50; // NEW: Anti-windup limit
+
+  float integral_error1 = 0;      // NEW: Integral error accumulator
+  float integral_error2 = 0;      // NEW: Integral error accumulator
+  const float max_integral = 50;  // NEW: Anti-windup limit
   unsigned long last_time = 0;
 
   unsigned long last_time_batch = 0;
 
-  
-
-float equilibrium_pitch = 0;
-
-float motorspeedtotaltest = 0;
 
 
+  float equilibrium_pitch = 0;
 
-float prevderivative1 = 0;
-float changederivative = 0;
+  float motorspeedtotaltest = 0;
 
 
-  while (1) {  
-    
+
+  float prevderivative1 = 0;
+  float changederivative = 0;
+
+
+  while (1) {
+
 
     vTaskDelay(5);
 
 
 
 
-    while(1){
-      if ( imu.gyroAvailable() && imu.accelAvailable() ) {
+    while (1) {
+      if (imu.gyroAvailable() && imu.accelAvailable()) {
         imu.readGyro();
         imu.readAccel();
         printAttitude(imu.ax, imu.ay, imu.az, -imu.gx, -imu.gy, imu.gz);
@@ -979,23 +1124,22 @@ float changederivative = 0;
     // Time difference (dt)
     unsigned long current_time = micros();
     //float current_time = micros();
-    float dt = (current_time - last_time) / 1000000.0;  
-    //if (dt < 0.001) dt = 0.001;  
+    float dt = (current_time - last_time) / 1000000.0;
+    //if (dt < 0.001) dt = 0.001;
     last_time = current_time;
 
     // Flip target_pitch logic (unchanged)
     //if (abs(global_pitch - target_pitch) < 2) {
-    //  target_pitch = (target_pitch > 0) ? -target_pitch : target_pitch;  
+    //  target_pitch = (target_pitch > 0) ? -target_pitch : target_pitch;
     //}
-    if (global_pitch < target_pitch){
-        //target_pitch += 0.1 * dt;
-    }
-    else{
-       // target_pitch -= 0.1 * dt;
+    if (global_pitch < target_pitch) {
+      //target_pitch += 0.1 * dt;
+    } else {
+      // target_pitch -= 0.1 * dt;
     }
     //target_pitch -= 0.00000005 * (tachSpeed1/60) / dt * 2 * 3.14; //convert to rad/s
 
-// Check if the system is stable (ignore if moving too fast)
+    // Check if the system is stable (ignore if moving too fast)
 
     //target_pitch += 0.00005 * (tachSpeed1 / 60.0) * 2 * 3.14; // Convert RPM to rad/s
 
@@ -1004,12 +1148,14 @@ float changederivative = 0;
 
 
 
-    target_pitch = constrain(target_pitch, -30, 30);  
+
+    //target_pitch = constrain(target_pitch, -15, 15);
+
 
     float error1 = target_pitch - global_pitch;
 
     float error2 = target_roll - global_roll;
-      
+
     /*if(global_pitch > 0){
       target_pitch -= angleincrement;
     }else if(global_pitch < -0){
@@ -1024,8 +1170,8 @@ float changederivative = 0;
 
 
 
-    integral_error1 += error1 * dt;  // NEW: Accumulate integral
-    integral_error1 = constrain(integral_error1, -max_integral, max_integral); // Anti-windup
+    integral_error1 += error1 * dt;                                             // NEW: Accumulate integral
+    integral_error1 = constrain(integral_error1, -max_integral, max_integral);  // Anti-windup
 
     float derivative1 = (error1 - previous_error1) / dt;
     previous_error1 = error1;
@@ -1041,18 +1187,19 @@ float changederivative = 0;
 
     float currenttach = tachSpeed1;
     // NEW: PID output instead of PD
-    float pid_output1 = Kp1 * error1 + Ki1 * integral_error1 + Kd1 * derivative1 - 200.0 * (tachSpeed1RA/50.0); 
-    pid_output1 = constrain(pid_output1, -100, 100);  
+    pid_output1 = Kp1 * error1 + Ki1 * integral_error1 + Kd1 * derivative1  +  motorMultiplier1 * (tachSpeed1RA / 50.0);
+    pid_output1 = constrain(pid_output1, -100, 100);
 
     //motorspeedtotaltest +=pid_output1;
 
     pid_output1 = setMotorAcceleration1(pid_output1);
-    //pid_output1 = constrain(pid_output1, -100, 100);  
+    //pid_output1 = constrain(pid_output1, -100, 100);
 
-    float pid_output2 = Kp2 * error2 + Ki2 * integral_error2 + Kd2 * derivative2 - 200.0 * (tachSpeed2RA/50.0); 
-    pid_output2 = constrain(pid_output2, -100, 100);  
+
+    pid_output2 = Kp2 * error2 + Ki2 * integral_error2 + Kd2 * derivative2 +  motorMultiplier2  * (tachSpeed2RA / 50.0);
+    pid_output2 = constrain(pid_output2, -100, 100);
     pid_output2 = setMotorAcceleration2(pid_output2);
-    //pid_output2 = constrain(pid_output2, -100, 100);  
+    //pid_output2 = constrain(pid_output2, -100, 100);
 
 
     float alpha = 0.05;
@@ -1060,45 +1207,46 @@ float changederivative = 0;
 
     filtered_pitch = alpha * global_pitch + (1 - alpha) * filtered_pitch;
 
-    
+
     // Calculate the angular acceleration of the reaction wheel
     angular_acceleration_wheel = (currenttach - previous_angular_velocity_wheel) / dt;
     previous_angular_velocity_wheel = currenttach;
 
-    angular_acceleration_wheel_filtered = angular_acceleration_wheel_filtered * (1-alpha) + angular_acceleration_wheel * alpha;
+    angular_acceleration_wheel_filtered = angular_acceleration_wheel_filtered * (1 - alpha) + angular_acceleration_wheel * alpha;
 
     float relative = 0;
 
-    if (derivative1 != 0){
+    if (derivative1 != 0) {
       relative = angular_acceleration_wheel_filtered / changederivative;
     }
 
-    if(abs(relative) > 0.5){
-       updateRelativeAverages(relative, global_pitch);
-
+    if (abs(relative) > 0.5) {
+      updateRelativeAverages(relative, global_pitch);
     }
 
     // Estimate the imbalance based on pitch angle
     float imbalance_threshold = 1.0;  // Threshold for determining imbalance (in radians)
-    float correction_factor = 0.1;  // Correction factor to adjust target pitch
+    float correction_factor = 0.1;    // Correction factor to adjust target pitch
 
     // If the pitch exceeds the threshold in either direction, adjust the target pitch
     if (abs(filtered_pitch) > imbalance_threshold) {
-        // Apply a correction in the opposite direction to balance the system
-        //target_pitch = -correction_factor * filtered_pitch;
+      // Apply a correction in the opposite direction to balance the system
+      //target_pitch = -correction_factor * filtered_pitch;
     } else {
-        // Otherwise, maintain the current equilibrium
-        //target_pitch = 0.0;  // Or you can use a more sophisticated equilibrium detection method
+      // Otherwise, maintain the current equilibrium
+      //target_pitch = 0.0;  // Or you can use a more sophisticated equilibrium detection method
     }
 
- 
+
 
     // Direction and duty cycle (unchanged logic, but use pid_output)
-    //int dutyCycle1 = 100 - abs(int(pid_output1));  
-    //dutyCycle1 = constrain(dutyCycle1, 0, 100);  
+    //int dutyCycle1 = 100 - abs(int(pid_output1));
+    //dutyCycle1 = constrain(dutyCycle1, 0, 100);
 
 
+    sendGraphData();
 
+    /*
     dataBuffer += String(global_pitch, 2) + "," + String(tachSpeed1, 2) + ";";
 
      if (millis() - last_time_batch >= 100) {
@@ -1108,37 +1256,44 @@ float changederivative = 0;
       dataBuffer = "";              // Clear buffer
       last_time_batch = millis();      // Reset timer
       // Serial.print(" send data ");
-    }
+    }*/
 
 
     // Debugging prints updated for PID
-    
+
     // Debugging prints updated for PID
 
 
     Serial.print(" | motor1: ");
-    Serial.print(currenttach >= 0 ? "+" : ""); Serial.print(currenttach, 2);
+    Serial.print(currenttach >= 0 ? "+" : "");
+    Serial.print(currenttach, 2);
     Serial.print(" | motor1RA: ");
-    Serial.print(tachSpeed1RA >= 0 ? "+" : ""); Serial.print(tachSpeed1RA, 2);
+    Serial.print(tachSpeed1RA >= 0 ? "+" : "");
+    Serial.print(tachSpeed1RA, 2);
 
-    
+
 
     Serial.print(" | TimeLoop: ");
-    Serial.print(dt >= 0 ? "+" : ""); Serial.print(dt * 1000000, 2);
+    Serial.print(dt >= 0 ? "+" : "");
+    Serial.print(dt * 1000000, 2);
 
     Serial.print(" pitch: ");
-    Serial.print(global_pitch >= 0 ? "+" : ""); Serial.print(global_pitch, 2);
+    Serial.print(global_pitch >= 0 ? "+" : "");
+    Serial.print(global_pitch, 2);
     Serial.print(" pitchF: ");
-    Serial.print(filtered_pitch >= 0 ? "+" : ""); Serial.print(filtered_pitch, 2);
+    Serial.print(filtered_pitch >= 0 ? "+" : "");
+    Serial.print(filtered_pitch, 2);
     Serial.print(" | Target: ");
-    Serial.print(target_pitch >= 0 ? "+" : ""); Serial.print(target_pitch, 2);
+    Serial.print(target_pitch >= 0 ? "+" : "");
+    Serial.print(target_pitch, 2);
 
     Serial.print(" | PID Out1: ");
-    Serial.print(pid_output1 >= 0 ? "+" : ""); Serial.print(pid_output1, 2);
-Serial.println();
+    Serial.print(pid_output1 >= 0 ? "+" : "");
+    Serial.print(pid_output1, 2);
+    Serial.println();
 
 
-/*
+    /*
 
     Serial.println();
     Serial.print(" | relative_avg_positive: ");
@@ -1171,15 +1326,15 @@ Serial.println();
 
     
 */
-/*
+    /*
     Serial.print(" roll: ");
     Serial.print(global_roll >= 0 ? "+" : ""); Serial.print(global_roll, 2);
     Serial.print(" | Target: ");
     Serial.print(target_roll >= 0 ? "+" : ""); Serial.print(target_roll, 2);
 */
 
-    
-/*
+
+    /*
 
     Serial.print(" | PID Out2: ");
     Serial.print(pid_output2 >= 0 ? "+" : ""); Serial.print(pid_output2, 2);
@@ -1207,9 +1362,9 @@ Serial.println();
 
 
 
- 
 
-    
+
+
 
     /*
     Serial.print(" | P_E: ");
@@ -1221,11 +1376,10 @@ Serial.println();
     
     Serial.print(" | motor: ");
     Serial.print(tachSpeed1 >= 0 ? "+" : ""); Serial.println(tachSpeed1, DEC);*/
-
   }
 }
 
-#define PRINT_SPEED 20 // 250 ms between prints
+#define PRINT_SPEED 20  // 250 ms between prints
 
 // Kalman Filter Variables
 float Q_angle = 0.001;  // Covariance of gyroscope noise
@@ -1234,37 +1388,37 @@ float R_angle = 0.5;    // Trust accelerometer less when moving
 
 float bias_pitch = 0, bias_roll = 0;
 float angle_pitch = 0, angle_roll = 0;
-float P_pitch[2][2] = {{0, 0}, {0, 0}};
-float P_roll[2][2] = {{0, 0}, {0, 0}};
+float P_pitch[2][2] = { { 0, 0 }, { 0, 0 } };
+float P_roll[2][2] = { { 0, 0 }, { 0, 0 } };
 float dt = 0.01;  // Filter sampling time
 
 void Kalman_Filter(float &angle, float &bias, float P[2][2], float angle_m, float gyro_m, bool ignore_accel) {
-    // Predict step
-    angle += (gyro_m - bias) * dt;
+  // Predict step
+  angle += (gyro_m - bias) * dt;
 
-    // Error covariance update
-    P[0][0] += dt * (dt * P[1][1] - P[0][1] - P[1][0] + Q_angle);
-    P[0][1] -= dt * P[1][1];
-    P[1][0] -= dt * P[1][1];
-    P[1][1] += Q_gyro * dt;
+  // Error covariance update
+  P[0][0] += dt * (dt * P[1][1] - P[0][1] - P[1][0] + Q_angle);
+  P[0][1] -= dt * P[1][1];
+  P[1][0] -= dt * P[1][1];
+  P[1][1] += Q_gyro * dt;
 
-    if (!ignore_accel) {  // Ignore accelerometer correction when moving fast
-        float angle_err = angle_m - angle;
-        float S = P[0][0] + R_angle;
-        float K_0 = P[0][0] / S;
-        float K_1 = P[1][0] / S;
+  if (!ignore_accel) {  // Ignore accelerometer correction when moving fast
+    float angle_err = angle_m - angle;
+    float S = P[0][0] + R_angle;
+    float K_0 = P[0][0] / S;
+    float K_1 = P[1][0] / S;
 
-        angle += K_0 * angle_err;
-        bias += K_1 * angle_err;
+    angle += K_0 * angle_err;
+    bias += K_1 * angle_err;
 
-        float P00_temp = P[0][0];
-        float P01_temp = P[0][1];
+    float P00_temp = P[0][0];
+    float P01_temp = P[0][1];
 
-        P[0][0] -= K_0 * P00_temp;
-        P[0][1] -= K_0 * P01_temp;
-        P[1][0] -= K_1 * P00_temp;
-        P[1][1] -= K_1 * P01_temp;
-    }
+    P[0][0] -= K_0 * P00_temp;
+    P[0][1] -= K_0 * P01_temp;
+    P[1][0] -= K_1 * P00_temp;
+    P[1][1] -= K_1 * P01_temp;
+  }
 }
 
 
@@ -1274,57 +1428,63 @@ void Kalman_Filter(float &angle, float &bias, float P[2][2], float angle_m, floa
 unsigned long lastUpdate = 0;  // Store the last update time in microseconds
 float angle_pitch2 = 0;
 float angle_roll2 = 0;
-float angle_pitch_gyro = 77; // Angle based purely on gyroscope
-float angle_roll_gyro = 0;  // Angle based purely on gyroscope
+float angle_pitch_gyro = 77;  // Angle based purely on gyroscope
+float angle_roll_gyro = 0;    // Angle based purely on gyroscope
 
 void printAttitude(float ax, float ay, float az, float gx, float gy, float gz) {
-    // Calculate dt (time difference between updates) using micros for better accuracy
-    unsigned long now = micros();  // Current time in microseconds
-    float dt2 = (now - lastUpdate) / 1000000.0;  // Convert microseconds to seconds
+  // Calculate dt (time difference between updates) using micros for better accuracy
+  unsigned long now = micros();                // Current time in microseconds
+  float dt2 = (now - lastUpdate) / 1000000.0;  // Convert microseconds to seconds
 
 
-    float sensitivityFactor = 2000.0 / 32768.0;  // This is the scaling factor
+  float sensitivityFactor = 2000.0 / 32768.0;  // This is the scaling factor
 
-    gx = imu.calcGyro(imu.gx);// - 2.5;
-    gy = imu.calcGyro(imu.gy) + 0;//+ 0.5;  // Set gy to calculated DPS
-
-    // Update last update time
-    lastUpdate = now;
-
-    // Compute roll and pitch from accelerometer
-    float accel_roll = atan2(ay, sqrt(ax * ax + az * az)) * 180.0 / PI;
-    float accel_pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180.0 / PI;
+ 
+  gy = imu.calcGyro(imu.gy) + 0.5;  //+ 0.5;  // pitch
+  gx = imu.calcGyro(imu.gx) -2.5;//- 2.5;  //roll
 
 
-    Kalman_Filter(angle_pitch, bias_pitch, P_pitch, accel_pitch, gy, false);
-    Kalman_Filter(angle_roll, bias_roll, P_roll, accel_roll, gx, false);
+global_pitch_gyro = gy;
+global_roll_gyro = gx;
+  // Update last update time
+  lastUpdate = now; gx = imu.calcGyro(imu.gx) -1.5;//- 2.5;  //roll
 
-    // Complementary filter
-    angle_pitch2 = ALPHA * (angle_pitch2 + gy * dt2) + (1.0 - ALPHA) * accel_pitch;
-    angle_roll2  = ALPHA * (angle_roll2 + gx * dt2) + (1.0 - ALPHA) * accel_roll;
+  // Compute roll and pitch from accelerometer
+  float accel_roll = atan2(ay, sqrt(ax * ax + az * az)) * 180.0 / PI;
+  float accel_pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180.0 / PI;
+
+global_pitch_accel = accel_pitch;
+global_roll_accel = accel_roll;
+
+  Kalman_Filter(angle_pitch, bias_pitch, P_pitch, accel_pitch, gy, false);
+  Kalman_Filter(angle_roll, bias_roll, P_roll, accel_roll, gx, false);
+
+  // Complementary filter
+  angle_pitch2 = ALPHA * (angle_pitch2 + gy * dt2) + (1.0 - ALPHA) * accel_pitch;
+  angle_roll2 = ALPHA * (angle_roll2 + gx * dt2) + (1.0 - ALPHA) * accel_roll;
 
 
-    // Gyroscope-only angle (integrated over time)
-    angle_pitch_gyro += gy * dt2;  // Integrating gyroscope data
-    angle_roll_gyro  += gx * dt2;  // Integrating gyroscope data
+  // Gyroscope-only angle (integrated over time)
+  angle_pitch_gyro += gy * dt2;  // Integrating gyroscope data
+  angle_roll_gyro += gx * dt2;   // Integrating gyroscope data
 
-    // Global angles
-    global_pitch =angle_pitch2 -3+1.5 + 2 -1;//-0.8 + 1.5 -1.8;// angle_pitch - 0.8
-    global_roll = angle_roll2;
+  // Global angles
+  global_pitch = angle_pitch2 - 3 + 1.5 + 2 - 1;  //-0.8 + 1.5 -1.8;// angle_pitch - 0.8
+  global_roll = angle_roll2;
 
-    // Send values to Serial Plotter
-    //Serial.print(accel_pitch); // Raw accelerometer pitch
-   // Serial.print("\t");
-   // Serial.print(angle_pitch2); // Filtered pitch (Complementary filter)
-    //Serial.print("\t");
-   // Serial.print(angle_pitch_gyro); // Gyroscope-only pitch (pure gyro)
-   // Serial.print("\t");
-    //Serial.println(angle_pitch); // Gyroscope-only pitch (pure gyro)
-   // Serial.print("\t");
+  // Send values to Serial Plotter
+  //Serial.print(accel_pitch); // Raw accelerometer pitch
+  // Serial.print("\t");
+  // Serial.print(angle_pitch2); // Filtered pitch (Complementary filter)
+  //Serial.print("\t");
+  // Serial.print(angle_pitch_gyro); // Gyroscope-only pitch (pure gyro)
+  // Serial.print("\t");
+  //Serial.println(angle_pitch); // Gyroscope-only pitch (pure gyro)
+  // Serial.print("\t");
 
-   // Serial.print(100); // Gyroscope-only pitch (pure gyro)
-    //Serial.print("\t");
-   // Serial.println(gx); // Gyroscope pitch rate*/
+  // Serial.print(100); // Gyroscope-only pitch (pure gyro)
+  //Serial.print("\t");
+  // Serial.println(gx); // Gyroscope pitch rate*/
 }
 
 
@@ -1368,8 +1528,8 @@ volatile uint32_t lastMicros = 0;
 
 
 void IRAM_ATTR pcntISR1(void *arg) {
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-/*
+  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+  /*
  // Get the event status
     uint32_t status = 0;
     pcnt_get_event_status(PCNT_UNIT_0, &status);
@@ -1385,13 +1545,13 @@ void IRAM_ATTR pcntISR1(void *arg) {
         // Handle the low limit event (e.g., reset counter or other logic)
         Serial.println("Low limit event triggered");
     }*/
-    vTaskNotifyGiveFromISR(tachoTaskHandle1, &xHigherPriorityTaskWoken);
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+  vTaskNotifyGiveFromISR(tachoTaskHandle1, &xHigherPriorityTaskWoken);
+  portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
 void IRAM_ATTR pcntISR2(void *arg) {
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-/*
+  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+  /*
  // Get the event status
     uint32_t status = 0;
     pcnt_get_event_status(PCNT_UNIT_0, &status);
@@ -1407,56 +1567,56 @@ void IRAM_ATTR pcntISR2(void *arg) {
         // Handle the low limit event (e.g., reset counter or other logic)
         Serial.println("Low limit event triggered");
     }*/
-    vTaskNotifyGiveFromISR(tachoTaskHandle2, &xHigherPriorityTaskWoken);
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+  vTaskNotifyGiveFromISR(tachoTaskHandle2, &xHigherPriorityTaskWoken);
+  portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
 
 
-#define AVG_WINDOW_SIZE 10 // Number of values to average
+#define AVG_WINDOW_SIZE 10  // Number of values to average
 
 
 
 void tachoTask1(void *pvParameter) {
-    int16_t lastCount = 0;
-    uint32_t lastMicros = micros();
-    int16_t count;
+  int16_t lastCount = 0;
+  uint32_t lastMicros = micros();
+  int16_t count;
 
-    float speedHistory[AVG_WINDOW_SIZE] = {0}; // Stores the last N speed values
-    int historyIndex = 0;  // Index to store the current speed in the array
-    float runningAverage = 0.0f;  // Running average of speed
+  float speedHistory[AVG_WINDOW_SIZE] = { 0 };  // Stores the last N speed values
+  int historyIndex = 0;                         // Index to store the current speed in the array
+  float runningAverage = 0.0f;                  // Running average of speed
 
-    while (1) {
-            int direction = 0;
-            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);  // Wait for ISR notification
+  while (1) {
+    int direction = 0;
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);  // Wait for ISR notification
 
-            uint32_t currentMicros = micros();
-            pcnt_get_counter_value(PCNT_UNIT_0, &count); // Read PCNT count
-            uint32_t status = 0;
-            pcnt_get_event_status(PCNT_UNIT_0, &status);
+    uint32_t currentMicros = micros();
+    pcnt_get_counter_value(PCNT_UNIT_0, &count);  // Read PCNT count
+    uint32_t status = 0;
+    pcnt_get_event_status(PCNT_UNIT_0, &status);
 
-            // Check if the high limit event triggered
-            if (status & PCNT_EVT_H_LIM) {
-                // Handle the high limit event (e.g., reset counter or other logic)
-                //Serial.println("High limit event triggered");
-                direction = 1;
-            }
+    // Check if the high limit event triggered
+    if (status & PCNT_EVT_H_LIM) {
+      // Handle the high limit event (e.g., reset counter or other logic)
+      //Serial.println("High limit event triggered");
+      direction = 1;
+    }
 
-            // Check if the low limit event triggered
-            if (status & PCNT_EVT_L_LIM) {
-                // Handle the low limit event (e.g., reset counter or other logic)
-                //Serial.println("Low limit event triggered");
-                direction = -1;
-            }
-            //pcnt_counter_clear(PCNT_UNIT_0);            // Reset counter after reading
+    // Check if the low limit event triggered
+    if (status & PCNT_EVT_L_LIM) {
+      // Handle the low limit event (e.g., reset counter or other logic)
+      //Serial.println("Low limit event triggered");
+      direction = -1;
+    }
+    //pcnt_counter_clear(PCNT_UNIT_0);            // Reset counter after reading
 
-            int countold = count;
-            count = direction * 10;
+    int countold = count;
+    count = direction * 10;
 
-            float deltaTime = (currentMicros - lastMicros) / 1e6f; // Convert to seconds
-            int16_t deltaCount = count - lastCount;
-            float speed = ((float)deltaCount / ENCODER_PPR)  / deltaTime; // RPs
-/*
+    float deltaTime = (currentMicros - lastMicros) / 1e6f;  // Convert to seconds
+    int16_t deltaCount = count - lastCount;
+    float speed = ((float)deltaCount / ENCODER_PPR) / deltaTime;  // RPs
+                                                                  /*
             Serial.print("Count: ");
             Serial.print(count);
             Serial.print("countold: ");
@@ -1467,23 +1627,23 @@ void tachoTask1(void *pvParameter) {
             Serial.println(deltaTime * 1000000);
 
 */
-            lastCount = 0;
-            lastMicros = currentMicros;
+    lastCount = 0;
+    lastMicros = currentMicros;
 
-            tachSpeed1 = speed;
+    tachSpeed1 = speed;
 
 
-          speedHistory[historyIndex] = speed;  // Store the current speed
-          historyIndex = (historyIndex + 1) % AVG_WINDOW_SIZE;  // Circular buffer
+    speedHistory[historyIndex] = speed;                   // Store the current speed
+    historyIndex = (historyIndex + 1) % AVG_WINDOW_SIZE;  // Circular buffer
 
-          // Calculate the running average
-          float sum = 0.0f;
-          for (int i = 0; i < AVG_WINDOW_SIZE; i++) {
-              sum += speedHistory[i];
-          }
-          runningAverage = sum / AVG_WINDOW_SIZE;  // Calculate the average speed
-          tachSpeed1RA = runningAverage;
+    // Calculate the running average
+    float sum = 0.0f;
+    for (int i = 0; i < AVG_WINDOW_SIZE; i++) {
+      sum += speedHistory[i];
     }
+    runningAverage = sum / AVG_WINDOW_SIZE;  // Calculate the average speed
+    tachSpeed1RA = runningAverage;
+  }
 }
 
 
@@ -1492,45 +1652,45 @@ void tachoTask1(void *pvParameter) {
 
 
 void tachoTask2(void *pvParameter) {
-    int16_t lastCount = 0;
-    uint32_t lastMicros = micros();
-    int16_t count;
+  int16_t lastCount = 0;
+  uint32_t lastMicros = micros();
+  int16_t count;
 
-    float speedHistory[AVG_WINDOW_SIZE] = {0}; // Stores the last N speed values
-    int historyIndex = 0;  // Index to store the current speed in the array
-    float runningAverage = 0.0f;  // Running average of speed
+  float speedHistory[AVG_WINDOW_SIZE] = { 0 };  // Stores the last N speed values
+  int historyIndex = 0;                         // Index to store the current speed in the array
+  float runningAverage = 0.0f;                  // Running average of speed
 
-    while (1) {
-            int direction = 0;
-            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);  // Wait for ISR notification
+  while (1) {
+    int direction = 0;
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);  // Wait for ISR notification
 
-            uint32_t currentMicros = micros();
-            pcnt_get_counter_value(PCNT_UNIT_1, &count); // Read PCNT count
-            uint32_t status = 0;
-            pcnt_get_event_status(PCNT_UNIT_1, &status);
+    uint32_t currentMicros = micros();
+    pcnt_get_counter_value(PCNT_UNIT_1, &count);  // Read PCNT count
+    uint32_t status = 0;
+    pcnt_get_event_status(PCNT_UNIT_1, &status);
 
-            // Check if the high limit event triggered
-            if (status & PCNT_EVT_H_LIM) {
-                // Handle the high limit event (e.g., reset counter or other logic)
-                //Serial.println("High limit event triggered");
-                direction = 1;
-            }
+    // Check if the high limit event triggered
+    if (status & PCNT_EVT_H_LIM) {
+      // Handle the high limit event (e.g., reset counter or other logic)
+      //Serial.println("High limit event triggered");
+      direction = 1;
+    }
 
-            // Check if the low limit event triggered
-            if (status & PCNT_EVT_L_LIM) {
-                // Handle the low limit event (e.g., reset counter or other logic)
-                //Serial.println("Low limit event triggered");
-                direction = -1;
-            }
-            //pcnt_counter_clear(PCNT_UNIT_0);            // Reset counter after reading
+    // Check if the low limit event triggered
+    if (status & PCNT_EVT_L_LIM) {
+      // Handle the low limit event (e.g., reset counter or other logic)
+      //Serial.println("Low limit event triggered");
+      direction = -1;
+    }
+    //pcnt_counter_clear(PCNT_UNIT_0);            // Reset counter after reading
 
-            int countold = count;
-            count = direction * 10;
+    int countold = count;
+    count = direction * 10;
 
-            float deltaTime = (currentMicros - lastMicros) / 1e6f; // Convert to seconds
-            int16_t deltaCount = count - lastCount;
-            float speed = ((float)deltaCount / ENCODER_PPR)  / deltaTime; // RPs
-/*
+    float deltaTime = (currentMicros - lastMicros) / 1e6f;  // Convert to seconds
+    int16_t deltaCount = count - lastCount;
+    float speed = ((float)deltaCount / ENCODER_PPR) / deltaTime;  // RPs
+                                                                  /*
             Serial.print("Count: ");
             Serial.print(count);
             Serial.print("countold: ");
@@ -1541,23 +1701,23 @@ void tachoTask2(void *pvParameter) {
             Serial.println(deltaTime * 1000000);
 
 */
-            lastCount = 0;
-            lastMicros = currentMicros;
+    lastCount = 0;
+    lastMicros = currentMicros;
 
-            tachSpeed2 = speed;
+    tachSpeed2 = speed;
 
 
-          speedHistory[historyIndex] = speed;  // Store the current speed
-          historyIndex = (historyIndex + 1) % AVG_WINDOW_SIZE;  // Circular buffer
+    speedHistory[historyIndex] = speed;                   // Store the current speed
+    historyIndex = (historyIndex + 1) % AVG_WINDOW_SIZE;  // Circular buffer
 
-          // Calculate the running average
-          float sum = 0.0f;
-          for (int i = 0; i < AVG_WINDOW_SIZE; i++) {
-              sum += speedHistory[i];
-          }
-          runningAverage = sum / AVG_WINDOW_SIZE;  // Calculate the average speed
-          tachSpeed2RA = runningAverage;
+    // Calculate the running average
+    float sum = 0.0f;
+    for (int i = 0; i < AVG_WINDOW_SIZE; i++) {
+      sum += speedHistory[i];
     }
+    runningAverage = sum / AVG_WINDOW_SIZE;  // Calculate the average speed
+    tachSpeed2RA = runningAverage;
+  }
 }
 
 
@@ -1566,59 +1726,59 @@ void tachoTask2(void *pvParameter) {
 
 
 void setupPcnt1() {
-    pcnt_config_t pcntConfig = {
-        .pulse_gpio_num = TACHO_A1,  // Encoder signal
-        .ctrl_gpio_num = TACHO_B1,   // Direction control
-        .lctrl_mode = PCNT_MODE_REVERSE,
-        .hctrl_mode = PCNT_MODE_KEEP,
-        .pos_mode = PCNT_COUNT_INC,
-        .neg_mode = PCNT_COUNT_DEC,
-        .counter_h_lim = 10,   // Set threshold for interrupt
-        .counter_l_lim = -10,     // No need for a negative limit
-        .unit = PCNT_UNIT_0,
-        .channel = PCNT_CHANNEL_0
-    };
+  pcnt_config_t pcntConfig = {
+    .pulse_gpio_num = TACHO_A1,  // Encoder signal
+    .ctrl_gpio_num = TACHO_B1,   // Direction control
+    .lctrl_mode = PCNT_MODE_REVERSE,
+    .hctrl_mode = PCNT_MODE_KEEP,
+    .pos_mode = PCNT_COUNT_INC,
+    .neg_mode = PCNT_COUNT_DEC,
+    .counter_h_lim = 10,   // Set threshold for interrupt
+    .counter_l_lim = -10,  // No need for a negative limit
+    .unit = PCNT_UNIT_0,
+    .channel = PCNT_CHANNEL_0
+  };
 
-    pcnt_unit_config(&pcntConfig);
-    pcnt_counter_pause(PCNT_UNIT_0);
-    pcnt_counter_clear(PCNT_UNIT_0);
+  pcnt_unit_config(&pcntConfig);
+  pcnt_counter_pause(PCNT_UNIT_0);
+  pcnt_counter_clear(PCNT_UNIT_0);
 
-    // Enable interrupt on high limit
-    pcnt_event_enable(PCNT_UNIT_0, PCNT_EVT_H_LIM);
-    pcnt_event_enable(PCNT_UNIT_0, PCNT_EVT_L_LIM);
+  // Enable interrupt on high limit
+  pcnt_event_enable(PCNT_UNIT_0, PCNT_EVT_H_LIM);
+  pcnt_event_enable(PCNT_UNIT_0, PCNT_EVT_L_LIM);
 
-    pcnt_isr_service_install(0);
-    pcnt_isr_handler_add(PCNT_UNIT_0, pcntISR1, NULL);
+  pcnt_isr_service_install(0);
+  pcnt_isr_handler_add(PCNT_UNIT_0, pcntISR1, NULL);
 
-    pcnt_counter_resume(PCNT_UNIT_0);// put before maybe
+  pcnt_counter_resume(PCNT_UNIT_0);  // put before maybe
 }
 
 void setupPcnt2() {
-    pcnt_config_t pcntConfig = {
-        .pulse_gpio_num = TACHO_A2,  // Encoder signal
-        .ctrl_gpio_num = TACHO_B2,   // Direction control
-        .lctrl_mode = PCNT_MODE_REVERSE,
-        .hctrl_mode = PCNT_MODE_KEEP,
-        .pos_mode = PCNT_COUNT_INC,
-        .neg_mode = PCNT_COUNT_DEC,
-        .counter_h_lim = 10,   // Set threshold for interrupt
-        .counter_l_lim = -10,     // No need for a negative limit
-        .unit = PCNT_UNIT_1,
-        .channel = PCNT_CHANNEL_0
-    };
+  pcnt_config_t pcntConfig = {
+    .pulse_gpio_num = TACHO_A2,  // Encoder signal
+    .ctrl_gpio_num = TACHO_B2,   // Direction control
+    .lctrl_mode = PCNT_MODE_REVERSE,
+    .hctrl_mode = PCNT_MODE_KEEP,
+    .pos_mode = PCNT_COUNT_INC,
+    .neg_mode = PCNT_COUNT_DEC,
+    .counter_h_lim = 10,   // Set threshold for interrupt
+    .counter_l_lim = -10,  // No need for a negative limit
+    .unit = PCNT_UNIT_1,
+    .channel = PCNT_CHANNEL_0
+  };
 
-    pcnt_unit_config(&pcntConfig);
-    pcnt_counter_pause(PCNT_UNIT_1);
-    pcnt_counter_clear(PCNT_UNIT_1);
+  pcnt_unit_config(&pcntConfig);
+  pcnt_counter_pause(PCNT_UNIT_1);
+  pcnt_counter_clear(PCNT_UNIT_1);
 
-    // Enable interrupt on high limit
-    pcnt_event_enable(PCNT_UNIT_1, PCNT_EVT_H_LIM);
-    pcnt_event_enable(PCNT_UNIT_1, PCNT_EVT_L_LIM);
+  // Enable interrupt on high limit
+  pcnt_event_enable(PCNT_UNIT_1, PCNT_EVT_H_LIM);
+  pcnt_event_enable(PCNT_UNIT_1, PCNT_EVT_L_LIM);
 
-    //pcnt_isr_service_install(1);
-    pcnt_isr_handler_add(PCNT_UNIT_1, pcntISR2, NULL);
+  //pcnt_isr_service_install(1);
+  pcnt_isr_handler_add(PCNT_UNIT_1, pcntISR2, NULL);
 
-    pcnt_counter_resume(PCNT_UNIT_1);// put before maybe
+  pcnt_counter_resume(PCNT_UNIT_1);  // put before maybe
 }
 
 
@@ -1627,20 +1787,19 @@ void setupPcnt2() {
 
 
 void ServerTask(void *pvParameter) {
-  while (1) {  
-    
-    //ArduinoOTA.handle();
+  while (1) {
+
+    ArduinoOTA.handle();
     //server.handleClient();
     vTaskDelay(100);
-
-  }    
+  }
 }
 
 
 void resetTuning() {
   //tuningComplete = false;
 
-    /*tuner.Configure(
+  /*tuner.Configure(
         360.0f,                    // Input span (degrees)
         OUTPUT_MAX - OUTPUT_MIN,   // Output span (200 for -100 to 100)
         0.0f,                      // Start from 0 output
@@ -1665,7 +1824,7 @@ void SerialTask(void *pvParameter) {
     if (Serial.available()) {
       String input = Serial.readStringUntil('\n');
       input.trim();
-      input.toLowerCase(); // Make command case-insensitive
+      input.toLowerCase();  // Make command case-insensitive
 
       // Handle "tune" command
       if (input == "t") {
@@ -1720,7 +1879,7 @@ void SerialTask(void *pvParameter) {
 
 
 void loop() {
-    vTaskDelay(1000);
+  vTaskDelay(1000);
 }
 
 

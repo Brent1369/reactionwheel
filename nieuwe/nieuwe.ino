@@ -119,7 +119,7 @@ float pid_output1 = 0;
 float pid_output2 =0;
 
 float target_pitch = 3;  //1;
-float target_roll = 2;
+float target_roll = 11;
 
 QueueHandle_t pcntQueue;  // FreeRTOS queue for ISR → Task communication
 

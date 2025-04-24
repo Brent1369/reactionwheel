@@ -23,8 +23,11 @@
 //const char* ssid = "Xperia XA2_e9a9";
 //const char* password = "brent123";
 
+
 const char *ssid = "telenet-A6AD7E7";
 const char *password = "vzemhjvX4arp";
+
+
 
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
@@ -1145,7 +1148,9 @@ void MainLoop(void *pvParameter) {
 
 
 
+
     //target_pitch = constrain(target_pitch, -15, 15);
+
 
     float error1 = target_pitch - global_pitch;
 
@@ -1189,6 +1194,7 @@ void MainLoop(void *pvParameter) {
 
     pid_output1 = setMotorAcceleration1(pid_output1);
     //pid_output1 = constrain(pid_output1, -100, 100);
+
 
     pid_output2 = Kp2 * error2 + Ki2 * integral_error2 + Kd2 * derivative2 +  motorMultiplier2  * (tachSpeed2RA / 50.0);
     pid_output2 = constrain(pid_output2, -100, 100);

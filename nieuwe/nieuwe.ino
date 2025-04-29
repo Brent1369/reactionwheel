@@ -24,8 +24,11 @@
 //const char* password = "brent123";
 
 
-const char *ssid = "telenet-A6AD7E7";
-const char *password = "vzemhjvX4arp";
+//const char *ssid = "telenet-A6AD7E7";
+//const char *password = "vzemhjvX4arp";
+
+const char *ssid = "SiemenCool69";
+const char *password = "12345678";
 
 
 
@@ -122,7 +125,10 @@ float pid_output1 = 0;
 float pid_output2 =0;
 
 float target_pitch = 3;  //1;
-float target_roll = 11;
+float target_roll = 9;
+
+float gyropitchoffset = 0.5;
+float gyrorolloffset = -2.5;
 
 QueueHandle_t pcntQueue;  // FreeRTOS queue for ISR → Task communication
 
@@ -160,15 +166,21 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
 
           float target = message.substring(0, message.indexOf('/')).toFloat();
           float multiplier = message.substring(message.indexOf('/') + 1).toFloat();
+          //float gyroOffset = message.substring(message.indexOf('/') + 1).toFloat();
+
 
           if (motorNum == 1) {
             Kp1 = p; Ki1 = i; Kd1 = d;
             target_pitch = target;
             motorMultiplier1 = multiplier;
+            //gyropitchoffset = gyroOffset;
+
           } else if (motorNum == 2) {
             Kp2 = p; Ki2 = i; Kd2 = d;
             target_roll = target;
             motorMultiplier2 = multiplier;
+            //gyrorolloffset = gyroOffset;
+
           }
         }
       }
@@ -958,47 +970,83 @@ int setMotorAcceleration2(int PID_OUT) {
 
 
 // Drive motor with direction control
+// Drive motor with direction control and smart braking
 void driveMotor1(double dutyCycle) {
-  //Serial.printf("DRIVE COMMAND: %.2f\n", dutyCycle);  // Add this line
+    dutyCycle = constrain(dutyCycle, -100, 100);  // Clamp to range
+    
+    if(digitalRead(BUTTON) == 0) { // Brake when button is pressed
+        // Only apply braking if motor speed is above threshold (5 RPM)
+        if(abs(tachSpeed1) > 3.0) {
+            // Calculate dynamic braking strength (proportional to current speed)
+            // Full braking (100%) at high speed, tapering off as speed decreases
+            float brakeStrength = map(abs(tachSpeed1), 2, 50, 20, 100); 
+            brakeStrength = constrain(brakeStrength, 20, 100);  // Minimum 30% braking
+            
+            // Apply braking in opposite direction of current motion
+            if(tachSpeed1 > 0) {
+                digitalWrite(DIRECTION_PIN1, LOW);  // Reverse direction
+                dutyCycle = brakeStrength;         // Full reverse PWM
+            } 
+            else {
+                digitalWrite(DIRECTION_PIN1, HIGH);  // Forward direction
+                dutyCycle = brakeStrength;           // Full forward PWM
+            }
+            
+            // Optional: Add current limiting here if needed
+            // For example, reduce braking if motor current gets too high
+        }
+        else {
+            // Motor speed is below threshold - stop completely
+            dutyCycle = 0;
+            digitalWrite(DIRECTION_PIN1, LOW);  // Set safe direction
+        }
+    }
+    else {
+        // Normal operation
+        if (dutyCycle >= 0) {
+            digitalWrite(DIRECTION_PIN1, LOW);  // low is clockwise
+        } else {
+            digitalWrite(DIRECTION_PIN1, HIGH); // high anticlockwise
+        }
+    }
 
-  dutyCycle = constrain(dutyCycle, -100, 100);  // Clamp to range
-
-  // Set direction
-  if (dutyCycle >= 0) {
-    digitalWrite(DIRECTION_PIN1, LOW);  // Forward
-  } else {
-    digitalWrite(DIRECTION_PIN1, HIGH);  // Reverse
-  }
-
-  if(digitalRead(BUTTON) == 0){ //switch = 0 = turn motor off
-    dutyCycle = 0;
-  }
-
-  dutyCycle = 100 - abs(int(dutyCycle));
-  // Convert to absolute PWM value (0-255)
-  mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, dutyCycle);
+    // Convert to absolute PWM value (0-100)
+    dutyCycle = 100 - abs(int(dutyCycle));
+    mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, dutyCycle);
 }
 
-// Drive motor with direction control
 void driveMotor2(double dutyCycle) {
-  //Serial.printf("DRIVE COMMAND: %.2f\n", dutyCycle);  // Add this line
+    dutyCycle = constrain(dutyCycle, -100, 100);  // Clamp to range
+    
+    if(digitalRead(BUTTON) == 0) { // Brake when button is pressed
+        if(abs(tachSpeed2) > 3.0) {
+            float brakeStrength = map(abs(tachSpeed2), 3, 50, 20, 100);
+            brakeStrength = constrain(brakeStrength, 20, 100);
+            
+            if(tachSpeed2 > 0) {
+                digitalWrite(DIRECTION_PIN2, LOW); // low is clockwise
+                dutyCycle = brakeStrength;
+            } 
+            else {
+                digitalWrite(DIRECTION_PIN2, HIGH); // high is anti 
+                dutyCycle = brakeStrength;
+            }
+        }
+        else {
+            dutyCycle = 0;
+            digitalWrite(DIRECTION_PIN2, LOW);
+        }
+    }
+    else {
+        if (dutyCycle >= 0) {
+            digitalWrite(DIRECTION_PIN2, LOW);
+        } else {
+            digitalWrite(DIRECTION_PIN2, HIGH);
+        }
+    }
 
-  dutyCycle = constrain(dutyCycle, -100, 100);  // Clamp to range
-
-  // Set direction
-  if (dutyCycle >= 0) {
-    digitalWrite(DIRECTION_PIN2, LOW);  // Forward
-  } else {
-    digitalWrite(DIRECTION_PIN2, HIGH);  // Reverse
-  }
-
-  if(digitalRead(BUTTON) == 0){ //switch = 0 = turn motor off
-    dutyCycle = 0;
-  }
-
-  dutyCycle = 100 - abs(int(dutyCycle));
-  // Convert to absolute PWM value (0-255)
-  mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM_OPR_A, dutyCycle);
+    dutyCycle = 100 - abs(int(dutyCycle));
+    mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM_OPR_A, dutyCycle);
 }
 
 float weighted_speed(float speed) {
@@ -1102,7 +1150,9 @@ void MainLoop(void *pvParameter) {
   float prevderivative1 = 0;
   float changederivative = 0;
 
-
+int prevbutton = 2;
+int startwhennear = 2;
+int startProgram = 0;
   while (1) {
 
 
@@ -1120,6 +1170,8 @@ void MainLoop(void *pvParameter) {
       }
       //vTaskDelay(1);
     }
+
+
 
     // Time difference (dt)
     unsigned long current_time = micros();
@@ -1145,6 +1197,20 @@ void MainLoop(void *pvParameter) {
 
 
 
+    if(digitalRead(BUTTON) == 1){
+      if (prevbutton == 0){
+        startwhennear = 1;
+      }
+    }
+
+    if(startwhennear == 1 && abs(global_pitch - target_pitch) < 1 && abs(global_roll - target_roll) < 1){
+      startwhennear = 0;
+      startProgram = 1;
+    }
+
+    if(startProgram == 0){
+      continue;
+    }
 
 
 
@@ -1431,6 +1497,8 @@ float angle_roll2 = 0;
 float angle_pitch_gyro = 77;  // Angle based purely on gyroscope
 float angle_roll_gyro = 0;    // Angle based purely on gyroscope
 
+int initvalues = 1;
+
 void printAttitude(float ax, float ay, float az, float gx, float gy, float gz) {
   // Calculate dt (time difference between updates) using micros for better accuracy
   unsigned long now = micros();                // Current time in microseconds
@@ -1440,8 +1508,8 @@ void printAttitude(float ax, float ay, float az, float gx, float gy, float gz) {
   float sensitivityFactor = 2000.0 / 32768.0;  // This is the scaling factor
 
  
-  gy = imu.calcGyro(imu.gy) + 0.5;  //+ 0.5;  // pitch
-  gx = imu.calcGyro(imu.gx) -2.5;//- 2.5;  //roll
+  gy = imu.calcGyro(imu.gy) + gyropitchoffset;  //+ 0.5;  // pitch
+  gx = imu.calcGyro(imu.gx) gyrorolloffset;//- 2.5;  //roll
 
 
 global_pitch_gyro = gy;
@@ -1452,6 +1520,8 @@ global_roll_gyro = gx;
   // Compute roll and pitch from accelerometer
   float accel_roll = atan2(ay, sqrt(ax * ax + az * az)) * 180.0 / PI;
   float accel_pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180.0 / PI;
+
+
 
 global_pitch_accel = accel_pitch;
 global_roll_accel = accel_roll;
@@ -1468,9 +1538,15 @@ global_roll_accel = accel_roll;
   angle_pitch_gyro += gy * dt2;  // Integrating gyroscope data
   angle_roll_gyro += gx * dt2;   // Integrating gyroscope data
 
+    if(initvalues == 1){
+    initvalues = 0;
+    angle_pitch2 = accel_pitch;
+    angle_roll2 = accel_roll;
+  }
+
   // Global angles
-  global_pitch = angle_pitch2 - 3 + 1.5 + 2 - 1;  //-0.8 + 1.5 -1.8;// angle_pitch - 0.8
-  global_roll = angle_roll2;
+  global_pitch = angle_pitch2;  //-0.8 + 1.5 -1.8;// angle_pitch - 0.8
+  global_roll = angle_roll2 ;
 
   // Send values to Serial Plotter
   //Serial.print(accel_pitch); // Raw accelerometer pitch

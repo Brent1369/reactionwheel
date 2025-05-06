@@ -1204,7 +1204,7 @@ int startProgram = 0;
       }
     }
 
-    if(startwhennear == 1 && abs(global_pitch - target_pitch) > 5 || abs(global_roll - target_roll) > 5){
+    if(startwhennear == 0 && abs(global_pitch - target_pitch) > 5 || abs(global_roll - target_roll) > 5){
       startwhennear = 1;
       startProgram = 0;
     }

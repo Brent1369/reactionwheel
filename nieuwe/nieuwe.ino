@@ -27,7 +27,8 @@
 //const char *ssid = "telenet-A6AD7E7";
 //const char *password = "vzemhjvX4arp";
 
-const char *ssid = "SiemenCool69";
+//const char *ssid = "SiemenCool69";
+const char *ssid = "LAPTOP_BRENT";
 const char *password = "12345678";
 
 
@@ -1203,6 +1204,11 @@ int startProgram = 0;
       }
     }
 
+    if(startwhennear == 1 && abs(global_pitch - target_pitch) > 5 || abs(global_roll - target_roll) > 5){
+      startwhennear = 1;
+      startProgram = 0;
+    }
+
     if(startwhennear == 1 && abs(global_pitch - target_pitch) < 1 && abs(global_roll - target_roll) < 1){
       startwhennear = 0;
       startProgram = 1;
@@ -1509,7 +1515,7 @@ void printAttitude(float ax, float ay, float az, float gx, float gy, float gz) {
 
  
   gy = imu.calcGyro(imu.gy) + gyropitchoffset;  //+ 0.5;  // pitch
-  gx = imu.calcGyro(imu.gx) gyrorolloffset;//- 2.5;  //roll
+  gx = imu.calcGyro(imu.gx) + gyrorolloffset;//- 2.5;  //roll
 
 
 global_pitch_gyro = gy;

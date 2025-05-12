@@ -24,12 +24,13 @@
 //const char* password = "brent123";
 
 
-//const char *ssid = "telenet-A6AD7E7";
-//const char *password = "vzemhjvX4arp";
+const char *ssid = "telenet-A6AD7E7";
+const char *password = "vzemhjvX4arp";
 
 //const char *ssid = "SiemenCool69";
-const char *ssid = "LAPTOP_BRENT";
-const char *password = "12345678";
+
+//const char *ssid = "LAPTOP_BRENT";
+//const char *password = "12345678";
 
 
 
@@ -90,6 +91,7 @@ void setupPcnt2();
 //#include <sTune.h>
 //#include "PID_AutoTune_v0.h"
 
+int startProgram = 0;
 
 float global_pitch =0;
 float global_pitch_accel =0;
@@ -126,9 +128,9 @@ float pid_output1 = 0;
 float pid_output2 =0;
 
 float target_pitch = 3;  //1;
-float target_roll = 9;
+float target_roll = 10;
 
-float gyropitchoffset = 0.5;
+float gyropitchoffset = 0.5 ;
 float gyrorolloffset = -2.5;
 
 QueueHandle_t pcntQueue;  // FreeRTOS queue for ISR → Task communication
@@ -187,6 +189,8 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
       }
       break;
     case WS_EVT_PONG:
+    Serial.printf("Client %u pong\n", client->id());
+    break;
     case WS_EVT_ERROR:
       break;
   }
@@ -900,7 +904,7 @@ void setup() {
   //xTaskCreatePinnedToCore(tachoTask2, "TachoTask2", 2048, NULL, 5, NULL, 0);
 
   xTaskCreatePinnedToCore(tachoTask1, "TachoTask3", 2048, NULL, 5, &tachoTaskHandle1, 0);
-  xTaskCreatePinnedToCore(tachoTask2, "TachoTask3", 2048, NULL, 5, &tachoTaskHandle2, 0);
+  xTaskCreatePinnedToCore(tachoTask2, "TachoTask4", 2048, NULL, 5, &tachoTaskHandle2, 0);
 }
 
 
@@ -975,7 +979,7 @@ int setMotorAcceleration2(int PID_OUT) {
 void driveMotor1(double dutyCycle) {
     dutyCycle = constrain(dutyCycle, -100, 100);  // Clamp to range
     
-    if(digitalRead(BUTTON) == 0) { // Brake when button is pressed
+    if(startProgram == 0) { // Brake when button is pressed
         // Only apply braking if motor speed is above threshold (5 RPM)
         if(abs(tachSpeed1) > 3.0) {
             // Calculate dynamic braking strength (proportional to current speed)
@@ -1019,7 +1023,7 @@ void driveMotor1(double dutyCycle) {
 void driveMotor2(double dutyCycle) {
     dutyCycle = constrain(dutyCycle, -100, 100);  // Clamp to range
     
-    if(digitalRead(BUTTON) == 0) { // Brake when button is pressed
+    if(startProgram == 0) { // Brake when button is pressed
         if(abs(tachSpeed2) > 3.0) {
             float brakeStrength = map(abs(tachSpeed2), 3, 50, 20, 100);
             brakeStrength = constrain(brakeStrength, 20, 100);
@@ -1152,8 +1156,8 @@ void MainLoop(void *pvParameter) {
   float changederivative = 0;
 
 int prevbutton = 2;
-int startwhennear = 2;
-int startProgram = 0;
+int startwhennear = 0;
+
   while (1) {
 
 
@@ -1197,24 +1201,33 @@ int startProgram = 0;
     //target_pitch += 0.00005 * (tachSpeed1 / 60.0) * 2 * 3.14; // Convert RPM to rad/s
 
 
-
+/*
     if(digitalRead(BUTTON) == 1){
       if (prevbutton == 0){
         startwhennear = 1;
       }
     }
+    */
 
-    if(startwhennear == 0 && abs(global_pitch - target_pitch) > 5 || abs(global_roll - target_roll) > 5){
+
+    if(startwhennear == 0 && (abs(global_pitch - target_pitch) > 10 || abs(global_roll - target_roll) > 10)){
       startwhennear = 1;
       startProgram = 0;
     }
+    
 
-    if(startwhennear == 1 && abs(global_pitch - target_pitch) < 1 && abs(global_roll - target_roll) < 1){
+
+
+    if(startwhennear == 1 && abs(global_pitch - target_pitch) < 0.6 && abs(global_roll - target_roll) < 0.6){
       startwhennear = 0;
       startProgram = 1;
     }
 
+    sendGraphData();
+
     if(startProgram == 0){
+      pid_output1 = setMotorAcceleration1(0);
+      pid_output2 = setMotorAcceleration2(0);
       continue;
     }
 
@@ -1316,7 +1329,7 @@ int startProgram = 0;
     //dutyCycle1 = constrain(dutyCycle1, 0, 100);
 
 
-    sendGraphData();
+    
 
     /*
     dataBuffer += String(global_pitch, 2) + "," + String(tachSpeed1, 2) + ";";
@@ -1872,6 +1885,7 @@ void ServerTask(void *pvParameter) {
   while (1) {
 
     ArduinoOTA.handle();
+    
     //server.handleClient();
     vTaskDelay(100);
   }

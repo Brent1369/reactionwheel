@@ -27,9 +27,9 @@
 //const char *ssid = "telenet-A6AD7E7";
 //const char *password = "vzemhjvX4arp";
 
-//const char *ssid = "SiemenCool69";
+const char *ssid = "SiemenCool69";
 
-const char *ssid = "LAPTOP_BRENT";
+//const char *ssid = "LAPTOP_BRENT";
 const char *password = "12345678";
 
 
@@ -1227,7 +1227,7 @@ int startwhennear = 0;
 
     if(startProgram == 0){
       pid_output1 = setMotorAcceleration1(0);
-      pid_output2 = setMotorAccelerat ion2(0);
+      pid_output2 = setMotorAcceleration2(0);
       continue;
     }
 
@@ -1508,7 +1508,7 @@ void Kalman_Filter(float &angle, float &bias, float P[2][2], float angle_m, floa
 
 
 
-#define ALPHA 0.999  // Complementary filter weight (adjust if needed)
+#define ALPHA 0.995  // Complementary filter weight (adjust if needed)
 
 unsigned long lastUpdate = 0;  // Store the last update time in microseconds
 float angle_pitch2 = 0;

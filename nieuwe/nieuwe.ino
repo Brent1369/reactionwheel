@@ -127,8 +127,8 @@ float maxspeed = 3300;
 float pid_output1 = 0;
 float pid_output2 =0;
 
-float target_pitch = 3;  //1;
-float target_roll = 10;
+float target_pitch = 2;  //1;
+float target_roll = 0;
 
 float gyropitchoffset = 0.5 ;
 float gyrorolloffset = -2.5;
@@ -1508,7 +1508,7 @@ void Kalman_Filter(float &angle, float &bias, float P[2][2], float angle_m, floa
 
 
 
-#define ALPHA 0.995  // Complementary filter weight (adjust if needed)
+#define ALPHA 0.999  // Complementary filter weight (adjust if needed)
 
 unsigned long lastUpdate = 0;  // Store the last update time in microseconds
 float angle_pitch2 = 0;
@@ -1534,7 +1534,9 @@ void printAttitude(float ax, float ay, float az, float gx, float gy, float gz) {
 global_pitch_gyro = gy;
 global_roll_gyro = gx;
   // Update last update time
-  lastUpdate = now; gx = imu.calcGyro(imu.gx) -1.5;//- 2.5;  //roll
+  lastUpdate = now;
+  
+ // gx = imu.calcGyro(imu.gx) -1.5;//- 2.5;  //roll
 
   // Compute roll and pitch from accelerometer
   float accel_roll = atan2(ay, sqrt(ax * ax + az * az)) * 180.0 / PI;

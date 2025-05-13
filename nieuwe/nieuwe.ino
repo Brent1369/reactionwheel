@@ -24,13 +24,13 @@
 //const char* password = "brent123";
 
 
-const char *ssid = "telenet-A6AD7E7";
-const char *password = "vzemhjvX4arp";
+//const char *ssid = "telenet-A6AD7E7";
+//const char *password = "vzemhjvX4arp";
 
 //const char *ssid = "SiemenCool69";
 
-//const char *ssid = "LAPTOP_BRENT";
-//const char *password = "12345678";
+const char *ssid = "LAPTOP_BRENT";
+const char *password = "12345678";
 
 
 
@@ -1218,7 +1218,7 @@ int startwhennear = 0;
 
 
 
-    if(startwhennear == 1 && abs(global_pitch - target_pitch) < 0.6 && abs(global_roll - target_roll) < 0.6){
+    if(startwhennear == 1 && abs(global_pitch - target_pitch) < 1 && abs(global_roll - target_roll) <1){
       startwhennear = 0;
       startProgram = 1;
     }
@@ -1227,7 +1227,7 @@ int startwhennear = 0;
 
     if(startProgram == 0){
       pid_output1 = setMotorAcceleration1(0);
-      pid_output2 = setMotorAcceleration2(0);
+      pid_output2 = setMotorAccelerat ion2(0);
       continue;
     }
 

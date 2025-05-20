@@ -27,9 +27,10 @@
 //const char *ssid = "telenet-A6AD7E7";
 //const char *password = "vzemhjvX4arp";
 
-const char *ssid = "SiemenCool69";
+//const char *ssid = "SiemenCool69";
 
-//const char *ssid = "LAPTOP_BRENT";
+
+const char *ssid = "LAPTOP_BRENT";
 const char *password = "12345678";
 
 
@@ -127,8 +128,8 @@ float maxspeed = 3300;
 float pid_output1 = 0;
 float pid_output2 =0;
 
-float target_pitch = 2;  //1;
-float target_roll = 0;
+float target_pitch = 3;  //1;
+float target_roll = 1;
 
 float gyropitchoffset = 0.5 ;
 float gyrorolloffset = -2.5;
@@ -1161,7 +1162,7 @@ int startwhennear = 0;
   while (1) {
 
 
-    vTaskDelay(5);
+    //vTaskDelay(5);
 
 
 
@@ -1508,7 +1509,7 @@ void Kalman_Filter(float &angle, float &bias, float P[2][2], float angle_m, floa
 
 
 
-#define ALPHA 0.999  // Complementary filter weight (adjust if needed)
+#define ALPHA 0.998  // Complementary filter weight (adjust if needed)
 
 unsigned long lastUpdate = 0;  // Store the last update time in microseconds
 float angle_pitch2 = 0;
@@ -1517,6 +1518,13 @@ float angle_pitch_gyro = 77;  // Angle based purely on gyroscope
 float angle_roll_gyro = 0;    // Angle based purely on gyroscope
 
 int initvalues = 1;
+
+#define MA_WINDOW_SIZE 10
+
+float pitch_buffer[MA_WINDOW_SIZE] = {0};
+float roll_buffer[MA_WINDOW_SIZE] = {0};
+int buffer_index = 0;
+bool buffer_filled = false;
 
 void printAttitude(float ax, float ay, float az, float gx, float gy, float gz) {
   // Calculate dt (time difference between updates) using micros for better accuracy
@@ -1547,12 +1555,15 @@ global_roll_gyro = gx;
 global_pitch_accel = accel_pitch;
 global_roll_accel = accel_roll;
 
-  Kalman_Filter(angle_pitch, bias_pitch, P_pitch, accel_pitch, gy, false);
-  Kalman_Filter(angle_roll, bias_roll, P_roll, accel_roll, gx, false);
-
+ 
   // Complementary filter
   angle_pitch2 = ALPHA * (angle_pitch2 + gy * dt2) + (1.0 - ALPHA) * accel_pitch;
   angle_roll2 = ALPHA * (angle_roll2 + gx * dt2) + (1.0 - ALPHA) * accel_roll;
+
+  //Kalman_Filter(angle_pitch2, bias_pitch, P_pitch, accel_pitch, gy, false);
+  //Kalman_Filter(angle_roll2, bias_roll, P_roll, accel_roll, gx, false);
+
+
 
 
   // Gyroscope-only angle (integrated over time)
@@ -1565,9 +1576,36 @@ global_roll_accel = accel_roll;
     angle_roll2 = accel_roll;
   }
 
-  // Global angles
-  global_pitch = angle_pitch2;  //-0.8 + 1.5 -1.8;// angle_pitch - 0.8
-  global_roll = angle_roll2 ;
+
+  // Store new values into buffers
+  pitch_buffer[buffer_index] = angle_pitch2;
+  roll_buffer[buffer_index] = angle_roll2;
+
+  // Compute moving averages
+  float sum_pitch = 0;
+  float sum_roll = 0;
+  int count = buffer_filled ? MA_WINDOW_SIZE : buffer_index + 1;
+
+  for (int i = 0; i < count; i++) {
+    sum_pitch += pitch_buffer[i];
+    sum_roll += roll_buffer[i];
+  }
+
+  float avg_pitch = sum_pitch / count;
+  float avg_roll = sum_roll / count;
+
+  // Update index
+  buffer_index = (buffer_index + 1) % MA_WINDOW_SIZE;
+  if (buffer_index == 0) buffer_filled = true;
+
+  // Set global filtered values
+  global_pitch = avg_pitch;
+  global_roll = avg_roll;
+
+
+
+  //global_pitch = angle_pitch2; 
+  //global_roll = angle_roll2 ;
 
   // Send values to Serial Plotter
   //Serial.print(accel_pitch); // Raw accelerometer pitch
